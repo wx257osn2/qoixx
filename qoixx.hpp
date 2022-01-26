@@ -215,9 +215,7 @@ class qoi{
     rgba_t px = px_prev;
 
     const std::size_t px_len = desc.width * desc.height;
-    for(std::size_t px_pos = 0; px_pos < px_len; ++px_pos){
-      pull(&px, pixels, desc.channels);
-
+    const auto f = [&run, px_len, &index, &p](rgba_t px, rgba_t px_prev, std::size_t px_pos){
       if(px == px_prev){
         ++run;
         if(run == 62 || px_pos == px_len-1){
@@ -271,6 +269,30 @@ class qoi{
           }
         }
       }
+    };
+    std::size_t px_pos = 0;
+    static constexpr std::size_t blocking_size = 4;
+    const auto rb_end = px_len/blocking_size*blocking_size;
+    for(; px_pos < rb_end; px_pos += blocking_size){
+      rgba_t pxs[blocking_size];
+      if(desc.channels == 4)
+        pull(pxs, pixels, 4*blocking_size);
+      else{
+        pull(pxs, pixels, 3);
+        pull(pxs+1, pixels, 3);
+        pull(pxs+2, pixels, 3);
+        pull(pxs+3, pixels, 3);
+        pxs[0].a = pxs[1].a = pxs[2].a = pxs[3].a = 255;
+      }
+      f(pxs[0], px_prev, px_pos);
+      f(pxs[1], pxs[0], px_pos);
+      f(pxs[2], pxs[1], px_pos);
+      f(pxs[3], pxs[2], px_pos);
+      px_prev = pxs[3];
+    }
+    for(; px_pos < px_len; ++px_pos){
+      pull(&px, pixels, desc.channels);
+      f(px, px_prev, px_pos);
       px_prev = px;
     }
 
