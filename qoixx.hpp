@@ -210,22 +210,24 @@ class qoi{
 
     rgba_t index[index_size] = {};
 
-    std::uint_fast8_t run = 0;
+    std::size_t run = 0;
     rgba_t px_prev = {.r = 0, .g = 0, .b = 0, .a = 255};
 
     const std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
-      if(px == px_prev){
+      if(px == px_prev)
         ++run;
-        if(run == 62){
-          p.push(chunk_tag::run | 61);
-          run = 0;
-        }
-      }
       else{
         if(run > 0){
-          p.push(chunk_tag::run | (run-1));
-          run = 0;
+          while(run >= 62){
+            static constexpr std::uint8_t x = chunk_tag::run | 61;
+            p.push(x);
+            run -= 62;
+          }
+          if(run > 0){
+            p.push(chunk_tag::run | (run-1));
+            run = 0;
+          }
         }
 
         const auto index_pos = px.hash() % index_size;
@@ -295,8 +297,17 @@ class qoi{
       pull(&px, pixels, desc.channels);
       f(px, px_prev);
     }
-    if(px == px_prev)
-      p.push(chunk_tag::run | (run-1));
+    if(px == px_prev){
+      while(run >= 62){
+        static constexpr std::uint8_t x = chunk_tag::run | 61;
+        p.push(x);
+        run -= 62;
+      }
+      if(run > 0){
+        p.push(chunk_tag::run | (run-1));
+        run = 0;
+      }
+    }
 
     push(p, padding, sizeof(padding));
   }
