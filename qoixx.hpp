@@ -351,26 +351,27 @@ class qoi{
         static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
         static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
         const auto b1 = p.pull();
+        const auto b1m = b1 & mask_head_2;
 
         if(b1 == chunk_tag::rgb)
           pull(&px, p, 3);
         else if(b1 == chunk_tag::rgba)
           pull(&px, p, 4);
-        else if((b1 & mask_head_2) == chunk_tag::index)
+        else if(b1m == chunk_tag::index)
           px = index[b1];
-        else if((b1 & mask_head_2) == chunk_tag::diff){
+        else if(b1m == chunk_tag::diff){
           px.r += ((b1 >> 4) & mask_tail_2) - 2;
           px.g += ((b1 >> 2) & mask_tail_2) - 2;
           px.b += ( b1       & mask_tail_2) - 2;
         }
-        else if((b1 & mask_head_2) == chunk_tag::luma){
+        else if(b1m == chunk_tag::luma){
           const auto b2 = p.pull();
           const int vg = (b1 & mask_tail_6) - 32;
           px.r += vg - 8 + ((b2 >> 4) & mask_tail_4);
           px.g += vg;
           px.b += vg - 8 + ( b2       & mask_tail_4);
         }
-        else if((b1 & mask_head_2) == chunk_tag::run)
+        else if(b1m == chunk_tag::run)
           run = b1 & mask_tail_6;
 
         index[px.hash() % index_size] = px;
