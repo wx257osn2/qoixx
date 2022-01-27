@@ -215,60 +215,59 @@ class qoi{
 
     const std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
-      if(px == px_prev)
+      if(px == px_prev){
         ++run;
-      else{
+        return;
+      }
+      if(run > 0){
+        while(run >= 62){
+          static constexpr std::uint8_t x = chunk_tag::run | 61;
+          p.push(x);
+          run -= 62;
+        }
         if(run > 0){
-          while(run >= 62){
-            static constexpr std::uint8_t x = chunk_tag::run | 61;
-            p.push(x);
-            run -= 62;
-          }
-          if(run > 0){
-            p.push(chunk_tag::run | (run-1));
-            run = 0;
-          }
+          p.push(chunk_tag::run | (run-1));
+          run = 0;
         }
+      }
 
-        const auto index_pos = px.hash() % index_size;
+      const auto index_pos = px.hash() % index_size;
 
-        if(index[index_pos] == px)
-          p.push(chunk_tag::index | index_pos);
-        else{
-          index[index_pos] = px;
+      if(index[index_pos] == px){
+        p.push(chunk_tag::index | index_pos);
+        return;
+      }
+      index[index_pos] = px;
 
-          if(px.a == px_prev.a){
-            const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r);
-            const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g);
-            const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b);
+      if(px.a != px_prev.a){
+        p.push(chunk_tag::rgba);
+        push(p, &px, 4);
+        return;
+      }
+      const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r);
+      const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g);
+      const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b);
 
-            const auto vg_r = vr - vg;
-            const auto vg_b = vb - vg;
+      const auto vg_r = vr - vg;
+      const auto vg_b = vb - vg;
 
-            if(
-              (256-3 < vr || (-3 < vr && vr < 2) || vr < -256+2) &&
-              (256-3 < vg || (-3 < vg && vg < 2) || vg < -256+2) &&
-              (256-3 < vb || (-3 < vb && vb < 2) || vb < -256+2)
-            )
-              p.push(chunk_tag::diff | (vr+2) << 4 | (vg+2) << 2 | (vb+2));
-            else if(
-              -9  < vg_r && vg_r < 8  &&
-              (256-33 < vg || (-33 < vg && vg < 32) || vg < -256+32) &&
-              -9  < vg_b && vg_b < 8
-            ){
-              p.push(chunk_tag::luma | (vg+32));
-              p.push((vg_r+8) << 4 | (vg_b+8));
-            }
-            else{
-              p.push(chunk_tag::rgb);
-              push(p, &px, 3);
-            }
-          }
-          else{
-            p.push(chunk_tag::rgba);
-            push(p, &px, 4);
-          }
-        }
+      if(
+        (256-3 < vr || (-3 < vr && vr < 2) || vr < -256+2) &&
+        (256-3 < vg || (-3 < vg && vg < 2) || vg < -256+2) &&
+        (256-3 < vb || (-3 < vb && vb < 2) || vb < -256+2)
+      )
+        p.push(chunk_tag::diff | (vr+2) << 4 | (vg+2) << 2 | (vb+2));
+      else if(
+        -9  < vg_r && vg_r < 8  &&
+        (256-33 < vg || (-33 < vg && vg < 32) || vg < -256+32) &&
+        -9  < vg_b && vg_b < 8
+      ){
+        p.push(chunk_tag::luma | (vg+32));
+        p.push((vg_r+8) << 4 | (vg_b+8));
+      }
+      else{
+        p.push(chunk_tag::rgb);
+        push(p, &px, 3);
       }
     };
     std::size_t px_pos = 0;
