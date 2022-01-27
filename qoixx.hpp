@@ -340,12 +340,9 @@ class qoi{
     index[(0*3+0*5+0*7+0*11)%index_size] = {};
     index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
-    std::uint_fast8_t run = 0;
     const std::size_t chunks_len = size - sizeof(padding);
     for(std::size_t px_pos = 0; px_pos < px_len; px_pos += channels){
-      if(run > 0)
-        --run;
-      else if(p.count() < chunks_len){
+      if(p.count() < chunks_len){
         static constexpr std::uint32_t mask_head_2 = 0b1100'0000u;
         static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
         static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
@@ -357,8 +354,11 @@ class qoi{
           pull(&px, p, 3);
         else if(b1 == chunk_tag::rgba)
           pull(&px, p, 4);
-        else if(b1m == chunk_tag::index)
+        else if(b1m == chunk_tag::index){
           px = index[b1];
+          push(pixels, &px, channels);
+          continue;
+        }
         else if(b1m == chunk_tag::diff){
           px.r += ((b1 >> 4) & mask_tail_2) - 2;
           px.g += ((b1 >> 2) & mask_tail_2) - 2;
@@ -371,8 +371,13 @@ class qoi{
           px.g += vg;
           px.b += vg - 8 + ( b2       & mask_tail_4);
         }
-        else if(b1m == chunk_tag::run)
-          run = b1 & mask_tail_6;
+        else if(b1m == chunk_tag::run){
+          const std::uint_fast8_t run = b1 & mask_tail_6;
+          for(std::uint_fast8_t i = 0u; i <= run; ++i)
+            push(pixels, &px, channels);
+          px_pos += run*channels;
+          continue;
+        }
 
         index[px.hash() % index_size] = px;
       }
