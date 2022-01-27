@@ -218,6 +218,7 @@ class qoi{
 
     std::size_t run = 0;
     rgba_t px_prev = {.r = 0, .g = 0, .b = 0, .a = 255};
+    index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
 
     const std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
@@ -231,7 +232,12 @@ class qoi{
           p.push(x);
           run -= 62;
         }
-        if(run > 0){
+        if(run == 1){
+          const auto index_pos = px_prev.hash() % index_size;
+          p.push(chunk_tag::index | index_pos);
+          run = 0;
+        }
+        else if(run > 0){
           p.push(chunk_tag::run | (run-1));
           run = 0;
         }
@@ -330,7 +336,9 @@ class qoi{
   template<typename Pusher, typename Puller>
   static void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size, std::size_t channels){
     rgba_t px = {0, 0, 0, 255};
-    rgba_t index[index_size] = {};
+    rgba_t index[index_size];
+    index[(0*3+0*5+0*7+0*11)%index_size] = {};
+    index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
     std::uint_fast8_t run = 0;
     const std::size_t chunks_len = size - sizeof(padding);
