@@ -164,8 +164,14 @@ class qoi{
       std::memcpy(&ret, this, sizeof(std::uint32_t));
       return ret;
     }
-    constexpr auto hash()const{
-      return r*3 + g*5 + b*7 + a*11;
+    auto hash()const{
+      static constexpr std::uint64_t constant =
+        static_cast<std::uint64_t>(3u) << 56 |
+                                   5u  << 16 |
+        static_cast<std::uint64_t>(7u) << 40 |
+                                  11u;
+      const auto v = static_cast<std::uint64_t>(this->v());
+      return (((v<<32|v)&0xFF00FF0000FF00FF)*constant)>>56;
     }
     bool operator==(const rgba_t& rhs)const{
       return v() == rhs.v();
