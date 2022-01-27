@@ -250,26 +250,19 @@ class qoi{
         push(p, &px, 4);
         return;
       }
-      const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r);
-      const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g);
-      const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b);
+      const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
+      const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
+      const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
 
-      const auto vg_r = vr - vg;
-      const auto vg_b = vb - vg;
-
-      if(
-        (256-3 < vr || (-3 < vr && vr < 2) || vr < -256+2) &&
-        (256-3 < vg || (-3 < vg && vg < 2) || vg < -256+2) &&
-        (256-3 < vb || (-3 < vb && vb < 2) || vb < -256+2)
-      )
-        p.push(chunk_tag::diff | (vr+2) << 4 | (vg+2) << 2 | (vb+2));
-      else if(
-        -9  < vg_r && vg_r < 8  &&
-        (256-33 < vg || (-33 < vg && vg < 32) || vg < -256+32) &&
-        -9  < vg_b && vg_b < 8
-      ){
-        p.push(chunk_tag::luma | (vg+32));
-        p.push((vg_r+8) << 4 | (vg_b+8));
+      if(const std::uint8_t v = (vr|vg|vb)&0xFF; v < 4){
+        p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
+        return;
+      }
+      const auto vg_r = vr - vg + 8;
+      const auto vg_b = vb - vg + 8;
+      if(const int v = (vg_r|vg_b)&0xFF, g = (vg+30)&0xFF; v < 16 && g < 64){
+        p.push(chunk_tag::luma | g);
+        p.push(vg_r << 4 | vg_b);
       }
       else{
         p.push(chunk_tag::rgb);
