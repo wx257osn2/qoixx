@@ -246,7 +246,7 @@ class qoi{
         return;
       }
       if(run > 0){
-        while(run >= 62){
+        while(run >= 62)[[unlikely]]{
           static constexpr std::uint8_t x = chunk_tag::run | 61;
           p.push(x);
           run -= 62;
@@ -321,7 +321,7 @@ class qoi{
       f(px, px_prev);
     }
     if(px == px_prev){
-      while(run >= 62){
+      while(run >= 62)[[unlikely]]{
         static constexpr std::uint8_t x = chunk_tag::run | 61;
         p.push(x);
         run -= 62;
@@ -347,7 +347,7 @@ class qoi{
       d.width == 0 || d.height == 0 || magic_ != magic ||
       d.channels < 3 || d.channels > 4 ||
       d.height >= pixels_max / d.width
-    )
+    )[[unlikely]]
       throw std::runtime_error("qoixx::qoi::decode: invalid header");
     return d;
   }
@@ -361,7 +361,7 @@ class qoi{
 
     const std::size_t chunks_len = size - sizeof(padding);
     for(std::size_t px_pos = 0; px_pos < px_len; px_pos += channels){
-      if(p.count() < chunks_len){
+      if(p.count() < chunks_len)[[likely]]{
         static constexpr std::uint32_t mask_head_2 = 0b1100'0000u;
         static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
         static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
@@ -408,7 +408,7 @@ class qoi{
   template<typename T, typename U>
   static inline T encode(const U& u, const desc& desc){
     using coU = container_operator<U>;
-    if(!coU::valid(u) || coU::size(u) < desc.width*desc.height*desc.channels || desc.width == 0 || desc.height == 0 || desc.channels < 3 || desc.channels > 4 || desc.height >= pixels_max / desc.width)
+    if(!coU::valid(u) || coU::size(u) < desc.width*desc.height*desc.channels || desc.width == 0 || desc.height == 0 || desc.channels < 3 || desc.channels > 4 || desc.height >= pixels_max / desc.width)[[unlikely]]
       throw std::invalid_argument{"qoixx::qoi::encode: invalid argument"};
 
     const auto max_size = static_cast<std::size_t>(desc.width) * desc.height * (desc.channels + 1) + header_size + sizeof(padding);
@@ -430,7 +430,7 @@ class qoi{
   static inline std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
     using coU = container_operator<U>;
     const auto size = coU::size(u);
-    if(!coU::valid(u) || size < header_size + sizeof(padding) || (channels != 0 && channels != 3 && channels != 4))
+    if(!coU::valid(u) || size < header_size + sizeof(padding) || (channels != 0 && channels != 3 && channels != 4))[[unlikely]]
       throw std::invalid_argument{"qoixx::qoi::decode: invalid argument"};
     auto puller = coU::create_puller(u);
 
