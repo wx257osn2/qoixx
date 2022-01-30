@@ -157,6 +157,25 @@ class qoi{
     std::uint8_t channels;
     qoi::colorspace colorspace;
   };
+  struct rgb_t{
+    std::uint8_t r, g, b;
+    inline auto hash()const{
+      static constexpr std::uint64_t constant =
+        static_cast<std::uint64_t>(3u) << 56 |
+                                   5u  << 16 |
+        static_cast<std::uint64_t>(7u) << 40 |
+                                  11u;
+      const auto v =
+        static_cast<std::uint64_t>(r)          |
+        static_cast<std::uint64_t>(g)    << 40 |
+        static_cast<std::uint64_t>(b)    << 16 |
+        static_cast<std::uint64_t>(0xff) << 56 ;
+      return (v*constant)>>56;
+    }
+    constexpr bool operator==(const rgb_t& r)const{
+      return ((this->r^r.r)|(this->g^r.g)|(this->b^r.b)) == 0;
+    }
+  };
   struct rgba_t{
     std::uint8_t r, g, b, a;
     inline std::uint32_t v()const{
@@ -225,19 +244,24 @@ class qoi{
     }
   }
  private:
-  template<typename Pusher, typename Puller>
+  template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
   static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
     write_32(p, magic);
     write_32(p, desc.width);
     write_32(p, desc.height);
-    p.push(desc.channels);
+    p.push(Channels);
     p.push(static_cast<std::uint8_t>(desc.colorspace));
+
+    using rgba_t = std::conditional_t<Channels == 4, qoi::qoi::rgba_t, qoi::qoi::rgb_t>;
 
     rgba_t index[index_size] = {};
 
     std::size_t run = 0;
-    rgba_t px_prev = {.r = 0, .g = 0, .b = 0, .a = 255};
-    index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
+    rgba_t px_prev = {};
+    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value){
+      px_prev.a = 255;
+      index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
+    }
 
     const std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
@@ -270,11 +294,12 @@ class qoi{
       }
       index[index_pos] = px;
 
-      if(px.a != px_prev.a){
-        p.push(chunk_tag::rgba);
-        push(p, &px, 4);
-        return;
-      }
+      if constexpr(Channels == 4)
+        if(px.a != px_prev.a){
+          p.push(chunk_tag::rgba);
+          push(p, &px, 4);
+          return;
+        }
       const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
       const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
       const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
@@ -299,14 +324,13 @@ class qoi{
     const auto rb_end = px_len/blocking_size*blocking_size;
     for(; px_pos < rb_end; px_pos += blocking_size){
       rgba_t pxs[blocking_size];
-      if(desc.channels == 4)
-        pull(pxs, pixels, 4*blocking_size);
+      if constexpr(Channels == 4)
+        pull(pxs, pixels, Channels*blocking_size);
       else{
-        pull(pxs, pixels, 3);
-        pull(pxs+1, pixels, 3);
-        pull(pxs+2, pixels, 3);
-        pull(pxs+3, pixels, 3);
-        pxs[0].a = pxs[1].a = pxs[2].a = pxs[3].a = 255;
+        pull(pxs, pixels, Channels);
+        pull(pxs+1, pixels, Channels);
+        pull(pxs+2, pixels, Channels);
+        pull(pxs+3, pixels, Channels);
       }
       f(pxs[0], px_prev);
       f(pxs[1], pxs[0]);
@@ -317,7 +341,7 @@ class qoi{
     auto px = px_prev;
     for(; px_pos < px_len; ++px_pos){
       px_prev = px;
-      pull(&px, pixels, desc.channels);
+      pull(&px, pixels, Channels);
       f(px, px_prev);
     }
     if(px == px_prev){
@@ -352,15 +376,19 @@ class qoi{
     return d;
   }
 
-  template<typename Pusher, typename Puller>
-  static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size, std::size_t channels){
-    rgba_t px = {0, 0, 0, 255};
-    rgba_t index[index_size];
-    index[(0*3+0*5+0*7+0*11)%index_size] = {};
-    index[(0*3+0*5+0*7+255*11)%index_size] = px;
+  template<std::size_t Channels, typename Pusher, typename Puller>
+  static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
+    using rgba_t = std::conditional_t<Channels == 4, qoi::qoi::rgba_t, qoi::qoi::rgb_t>;
+
+    rgba_t px = {};
+    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
+      px.a = 255;
+    rgba_t index[index_size] = {};
+    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
+      index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
     const std::size_t chunks_len = size - sizeof(padding);
-    for(std::size_t px_pos = 0; px_pos < px_len; px_pos += channels){
+    for(std::size_t px_pos = 0; px_pos < px_len; ++px_pos){
       if(p.count() < chunks_len)[[likely]]{
         static constexpr std::uint32_t mask_head_2 = 0b1100'0000u;
         static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
@@ -401,7 +429,7 @@ class qoi{
         index[px.hash() % index_size] = px;
       }
 
-      push(pixels, &px, channels);
+      push(pixels, &px, Channels);
     }
   }
  public:
@@ -417,7 +445,10 @@ class qoi{
     auto p = coT::create_pusher(data);
     auto puller = coU::create_puller(u);
 
-    encode_impl(p, puller, desc);
+    if(desc.channels == 4)
+      encode_impl<4>(p, puller, desc);
+    else
+      encode_impl<3>(p, puller, desc);
 
     return p.finalize();
   }
@@ -438,12 +469,15 @@ class qoi{
     if(channels == 0)
       channels = d.channels;
 
-    const std::size_t px_len = static_cast<std::size_t>(d.width) * d.height * channels;
+    const std::size_t px_len = static_cast<std::size_t>(d.width) * d.height;
     using coT = container_operator<T>;
-    T data = coT::construct(px_len);
+    T data = coT::construct(px_len*channels);
     auto p = coT::create_pusher(data);
 
-    decode_impl(p, puller, px_len, size, channels);
+    if(channels == 4)
+      decode_impl<4>(p, puller, px_len, size);
+    else
+      decode_impl<3>(p, puller, px_len, size);
 
     return std::make_pair(std::move(p.finalize()), d);
   }
