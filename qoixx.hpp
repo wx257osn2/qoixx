@@ -19,7 +19,7 @@ template<typename T, typename A>
 requires(sizeof(T) == 1)
 struct default_container_operator<std::vector<T, A>>{
   using target_type = std::vector<T, A>;
-  static target_type construct(std::size_t size){
+  static inline target_type construct(std::size_t size){
     target_type t(size);
     return t;
   }
@@ -27,17 +27,17 @@ struct default_container_operator<std::vector<T, A>>{
     static constexpr bool is_contiguous = true;
     target_type* t;
     std::size_t i = 0;
-    void push(std::uint8_t x)noexcept{
+    inline void push(std::uint8_t x)noexcept{
       (*t)[i++] = static_cast<T>(x);
     }
-    target_type finalize()noexcept{
+    inline target_type finalize()noexcept{
       t->resize(i);
       return std::move(*t);
     }
-    std::uint8_t* raw_pointer()noexcept{
+    inline std::uint8_t* raw_pointer()noexcept{
       return static_cast<std::uint8_t*>(t->data())+i;
     }
-    void advance(std::size_t n)noexcept{
+    inline void advance(std::size_t n)noexcept{
       i += n;
     }
   };
@@ -48,23 +48,23 @@ struct default_container_operator<std::vector<T, A>>{
     static constexpr bool is_contiguous = true;
     const T* t;
     std::size_t i = 0;
-    std::uint8_t pull()noexcept{
+    inline std::uint8_t pull()noexcept{
       return static_cast<std::uint8_t>(t[i++]);
     }
-    const std::uint8_t* raw_pointer()noexcept{
+    inline const std::uint8_t* raw_pointer()noexcept{
       return static_cast<const std::uint8_t*>(t)+i;
     }
-    void advance(std::size_t n)noexcept{
+    inline void advance(std::size_t n)noexcept{
       i += n;
     }
-    std::size_t count()const noexcept{
+    inline std::size_t count()const noexcept{
       return i;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.data()};
   }
-  static std::size_t size(const target_type& t)noexcept{
+  static inline std::size_t size(const target_type& t)noexcept{
     return t.size();
   }
   static constexpr bool valid(const target_type&)noexcept{
@@ -80,26 +80,26 @@ struct default_container_operator<std::pair<T*, std::size_t>>{
     static constexpr bool is_contiguous = true;
     const T* ptr;
     std::size_t i = 0;
-    std::uint8_t pull()noexcept{
+    inline std::uint8_t pull()noexcept{
       return static_cast<std::uint8_t>(ptr[i++]);
     }
-    const std::uint8_t* raw_pointer()noexcept{
+    inline const std::uint8_t* raw_pointer()noexcept{
       return static_cast<const std::uint8_t*>(ptr)+i;
     }
-    void advance(std::size_t n)noexcept{
+    inline void advance(std::size_t n)noexcept{
       i += n;
     }
-    std::size_t count()const noexcept{
+    inline std::size_t count()const noexcept{
       return i;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.first};
   }
-  static std::size_t size(const target_type& t)noexcept{
+  static inline std::size_t size(const target_type& t)noexcept{
     return t.second;
   }
-  static bool valid(const target_type& t)noexcept{
+  static inline bool valid(const target_type& t)noexcept{
     return t.first != nullptr;
   }
 };
@@ -111,7 +111,7 @@ struct container_operator : detail::default_container_operator<T>{};
 
 class qoi{
   template<typename T>
-  static void push(T& dst, const void* src, std::size_t size){
+  static inline void push(T& dst, const void* src, std::size_t size){
     if constexpr(T::is_contiguous){
       auto*const ptr = dst.raw_pointer();
       dst.advance(size);
@@ -124,7 +124,7 @@ class qoi{
     }
   }
   template<typename T>
-  static void pull(void* dst, T& src, std::size_t size){
+  static inline void pull(void* dst, T& src, std::size_t size){
     if constexpr(T::is_contiguous){
       const auto*const ptr = src.raw_pointer();
       src.advance(size);
@@ -158,13 +158,13 @@ class qoi{
   };
   struct rgba_t{
     std::uint8_t r, g, b, a;
-    std::uint32_t v()const{
+    inline std::uint32_t v()const{
       static_assert(sizeof(rgba_t) == sizeof(std::uint32_t));
       std::uint32_t ret;
       std::memcpy(&ret, this, sizeof(std::uint32_t));
       return ret;
     }
-    auto hash()const{
+    inline auto hash()const{
       static constexpr std::uint64_t constant =
         static_cast<std::uint64_t>(3u) << 56 |
                                    5u  << 16 |
@@ -173,10 +173,10 @@ class qoi{
       const auto v = static_cast<std::uint64_t>(this->v());
       return (((v<<32|v)&0xFF00FF0000FF00FF)*constant)>>56;
     }
-    bool operator==(const rgba_t& rhs)const{
+    inline bool operator==(const rgba_t& rhs)const{
       return v() == rhs.v();
     }
-    bool operator!=(const rgba_t& rhs)const{
+    inline bool operator!=(const rgba_t& rhs)const{
       return v() != rhs.v();
     }
   };
@@ -207,7 +207,7 @@ class qoi{
   }
  private:
   template<typename Pusher, typename Puller>
-  static void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
+  static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
     write_32(p, magic);
     write_32(p, desc.width);
     write_32(p, desc.height);
@@ -317,7 +317,7 @@ class qoi{
   }
 
   template<typename Puller>
-  static desc decode_header(Puller& p){
+  static inline desc decode_header(Puller& p){
     desc d;
     const auto magic_ = read_32(p);
     d.width = read_32(p);
@@ -334,7 +334,7 @@ class qoi{
   }
 
   template<typename Pusher, typename Puller>
-  static void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size, std::size_t channels){
+  static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size, std::size_t channels){
     rgba_t px = {0, 0, 0, 255};
     rgba_t index[index_size];
     index[(0*3+0*5+0*7+0*11)%index_size] = {};
@@ -387,7 +387,7 @@ class qoi{
   }
  public:
   template<typename T, typename U>
-  static T encode(const U& u, const desc& desc){
+  static inline T encode(const U& u, const desc& desc){
     using coU = container_operator<U>;
     if(!coU::valid(u) || coU::size(u) < desc.width*desc.height*desc.channels || desc.width == 0 || desc.height == 0 || desc.channels < 3 || desc.channels > 4 || desc.height >= pixels_max / desc.width)
       throw std::invalid_argument{"qoixx::qoi::encode: invalid argument"};
@@ -404,11 +404,11 @@ class qoi{
   }
   template<typename T, typename U>
   requires(sizeof(U) == 1)
-  static T encode(const U* pixels, std::size_t size, const desc& desc){
+  static inline T encode(const U* pixels, std::size_t size, const desc& desc){
     return encode<T>(std::make_pair(pixels, size), desc);
   }
   template<typename T, typename U>
-  static std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
+  static inline std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
     using coU = container_operator<U>;
     const auto size = coU::size(u);
     if(!coU::valid(u) || size < header_size + sizeof(padding) || (channels != 0 && channels != 3 && channels != 4))
@@ -430,7 +430,7 @@ class qoi{
   }
   template<typename T, typename U>
   requires(sizeof(U) == 1)
-  static std::pair<T, desc> decode(const U* pixels, std::size_t size, std::uint8_t channels = 0){
+  static inline std::pair<T, desc> decode(const U* pixels, std::size_t size, std::uint8_t channels = 0){
     return decode<T>(std::make_pair(pixels, size), channels);
   }
 };
