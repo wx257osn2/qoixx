@@ -7,6 +7,7 @@
 #include<vector>
 #include<type_traits>
 #include<stdexcept>
+#include<bit>
 
 namespace qoixx{
 
@@ -160,9 +161,16 @@ class qoi{
     std::uint8_t r, g, b, a;
     inline std::uint32_t v()const{
       static_assert(sizeof(rgba_t) == sizeof(std::uint32_t));
-      std::uint32_t ret;
-      std::memcpy(&ret, this, sizeof(std::uint32_t));
-      return ret;
+      if constexpr(std::endian::native == std::endian::little){
+        std::uint32_t x;
+        std::memcpy(&x, this, sizeof(std::uint32_t));
+        return x;
+      }
+      else
+        return std::uint32_t{r}       |
+               std::uint32_t{g} <<  8 |
+               std::uint32_t{b} << 16 |
+               std::uint32_t{a} << 24;
     }
     inline auto hash()const{
       static constexpr std::uint64_t constant =
@@ -191,19 +199,30 @@ class qoi{
   static constexpr std::size_t pixels_max = 400000000u;
   static constexpr std::uint8_t padding[8] = {0, 0, 0, 0, 0, 0, 0, 1};
   template<typename Puller>
-  static constexpr std::uint32_t read_32(Puller& p){
-    const auto _1 = p.pull();
-    const auto _2 = p.pull();
-    const auto _3 = p.pull();
-    const auto _4 = p.pull();
-    return static_cast<std::uint32_t>(_1 << 24 | _2 << 16 | _3 << 8 | _4);
+  static inline std::uint32_t read_32(Puller& p){
+    if constexpr(std::endian::native == std::endian::big && Puller::is_contiguous){
+      std::uint32_t x;
+      pull(&x, p, sizeof(x));
+      return x;
+    }
+    else{
+      const auto _1 = p.pull();
+      const auto _2 = p.pull();
+      const auto _3 = p.pull();
+      const auto _4 = p.pull();
+      return static_cast<std::uint32_t>(_1 << 24 | _2 << 16 | _3 << 8 | _4);
+    }
   }
   template<typename Pusher>
-  static constexpr void write_32(Pusher& p, std::uint32_t value){
-    p.push((value & 0xff000000) >> 24);
-    p.push((value & 0x00ff0000) >> 16);
-    p.push((value & 0x0000ff00) >>  8);
-    p.push( value & 0x000000ff       );
+  static inline void write_32(Pusher& p, std::uint32_t value){
+    if constexpr(std::endian::native == std::endian::big && Pusher::is_contiguous)
+      push(p, value, sizeof(value));
+    else{
+      p.push((value & 0xff000000) >> 24);
+      p.push((value & 0x00ff0000) >> 16);
+      p.push((value & 0x0000ff00) >>  8);
+      p.push( value & 0x000000ff       );
+    }
   }
  private:
   template<typename Pusher, typename Puller>
