@@ -395,37 +395,59 @@ class qoi{
         static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
         static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
         const auto b1 = p.pull();
-        const auto b1m = b1 & mask_head_2;
 
-        if(b1 == chunk_tag::rgb)
-          pull(&px, p, 3);
-        else if(b1 == chunk_tag::rgba)
-          pull(&px, p, 4);
-        else if(b1m == chunk_tag::index){
-          px = index[b1];
-          push(pixels, &px, channels);
-          continue;
+#define QOIXX_HPP_DECODE_SWITCH(...) \
+        switch(b1){ \
+          __VA_ARGS__ \
+          case chunk_tag::rgb: \
+            pull(&px, p, 3); \
+            break; \
+          default: \
+            switch(b1 & mask_head_2){ \
+              case chunk_tag::index: \
+                px = index[b1]; \
+                push(pixels, &px, Channels); \
+                continue; \
+              case chunk_tag::diff: \
+                px.r += ((b1 >> 4) & mask_tail_2) - 2; \
+                px.g += ((b1 >> 2) & mask_tail_2) - 2; \
+                px.b += ( b1       & mask_tail_2) - 2; \
+                break; \
+              case chunk_tag::luma: \
+                { \
+                  const auto b2 = p.pull(); \
+                  const int vg = (b1 & mask_tail_6) - 32; \
+                  px.r += vg - 8 + ((b2 >> 4) & mask_tail_4); \
+                  px.g += vg; \
+                  px.b += vg - 8 + ( b2       & mask_tail_4); \
+                } \
+                break; \
+              case chunk_tag::run: \
+                { \
+                  std::size_t run = b1 & mask_tail_6; \
+                  if(px_pos+run >= px_len)[[unlikely]] \
+                    run = px_len-px_pos; \
+                  for(std::size_t i = 0u; i <= run; ++i) \
+                    push(pixels, &px, Channels); \
+                  px_pos += run; \
+                  continue; \
+                } \
+            } \
         }
-        else if(b1m == chunk_tag::diff){
-          px.r += ((b1 >> 4) & mask_tail_2) - 2;
-          px.g += ((b1 >> 2) & mask_tail_2) - 2;
-          px.b += ( b1       & mask_tail_2) - 2;
-        }
-        else if(b1m == chunk_tag::luma){
-          const auto b2 = p.pull();
-          const int vg = (b1 & mask_tail_6) - 32;
-          px.r += vg - 8 + ((b2 >> 4) & mask_tail_4);
-          px.g += vg;
-          px.b += vg - 8 + ( b2       & mask_tail_4);
-        }
-        else if(b1m == chunk_tag::run){
-          const std::uint_fast8_t run = b1 & mask_tail_6;
-          for(std::uint_fast8_t i = 0u; i <= run; ++i)
-            push(pixels, &px, channels);
-          px_pos += run*channels;
-          continue;
-        }
-
+        if constexpr(Channels == 4)
+          QOIXX_HPP_DECODE_SWITCH(
+            case chunk_tag::rgba:
+              pull(&px, p, 4);
+              break;
+          )
+        else
+          QOIXX_HPP_DECODE_SWITCH(
+            [[unlikely]] case chunk_tag::rgba:
+              pull(&px, p, 3);
+              p.advance(1);
+              break;
+          )
+#undef QOIXX_HPP_DECODE_SWITCH
         index[px.hash() % index_size] = px;
       }
 
