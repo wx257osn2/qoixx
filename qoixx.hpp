@@ -111,28 +111,40 @@ template<typename T>
 struct container_operator : detail::default_container_operator<T>{};
 
 class qoi{
-  template<typename T>
-  static inline void push(T& dst, const void* src, std::size_t size){
+  template<std::size_t Size, typename T>
+  static inline void push(T& dst, const void* src){
     if constexpr(T::is_contiguous){
       auto*const ptr = dst.raw_pointer();
-      dst.advance(size);
-      std::memcpy(ptr, src, size);
+      dst.advance(Size);
+      if constexpr(Size == 3){
+        std::memcpy(ptr, src, 2);
+        std::memcpy(ptr+2, static_cast<const std::uint8_t*>(src)+2, 1);
+      }
+      else
+        std::memcpy(ptr, src, Size);
     }
     else{
       const auto* ptr = static_cast<const std::uint8_t*>(src);
+      auto size = Size;
       while(size --> 0)
         dst.push(*ptr++);
     }
   }
-  template<typename T>
-  static inline void pull(void* dst, T& src, std::size_t size){
+  template<std::size_t Size, typename T>
+  static inline void pull(void* dst, T& src){
     if constexpr(T::is_contiguous){
       const auto*const ptr = src.raw_pointer();
-      src.advance(size);
-      std::memcpy(dst, ptr, size);
+      src.advance(Size);
+      if constexpr(Size == 3){
+        std::memcpy(dst, ptr, 2);
+        std::memcpy(static_cast<std::uint8_t*>(dst)+2, ptr+2, 1);
+      }
+      else
+        std::memcpy(dst, ptr, Size);
     }
     else{
       auto* ptr = static_cast<std::uint8_t*>(dst);
+      auto size = Size;
       while(size --> 0)
         *ptr++ = src.pull();
     }
@@ -221,7 +233,7 @@ class qoi{
   static inline std::uint32_t read_32(Puller& p){
     if constexpr(std::endian::native == std::endian::big && Puller::is_contiguous){
       std::uint32_t x;
-      pull(&x, p, sizeof(x));
+      pull<sizeof(x)>(&x, p);
       return x;
     }
     else{
@@ -235,7 +247,7 @@ class qoi{
   template<typename Pusher>
   static inline void write_32(Pusher& p, std::uint32_t value){
     if constexpr(std::endian::native == std::endian::big && Pusher::is_contiguous)
-      push(p, value, sizeof(value));
+      push<sizeof(value)>(p, value);
     else{
       p.push((value & 0xff000000) >> 24);
       p.push((value & 0x00ff0000) >> 16);
@@ -297,7 +309,7 @@ class qoi{
       if constexpr(Channels == 4)
         if(px.a != px_prev.a){
           p.push(chunk_tag::rgba);
-          push(p, &px, 4);
+          push<4>(p, &px);
           return;
         }
       const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
@@ -316,7 +328,7 @@ class qoi{
       }
       else{
         p.push(chunk_tag::rgb);
-        push(p, &px, 3);
+        push<3>(p, &px);
       }
     };
     std::size_t px_pos = 0;
@@ -324,14 +336,7 @@ class qoi{
     const auto rb_end = px_len/blocking_size*blocking_size;
     for(; px_pos < rb_end; px_pos += blocking_size){
       rgba_t pxs[blocking_size];
-      if constexpr(Channels == 4)
-        pull(pxs, pixels, Channels*blocking_size);
-      else{
-        pull(pxs, pixels, Channels);
-        pull(pxs+1, pixels, Channels);
-        pull(pxs+2, pixels, Channels);
-        pull(pxs+3, pixels, Channels);
-      }
+      pull<Channels*blocking_size>(pxs, pixels);
       f(pxs[0], px_prev);
       f(pxs[1], pxs[0]);
       f(pxs[2], pxs[1]);
@@ -341,7 +346,7 @@ class qoi{
     auto px = px_prev;
     for(; px_pos < px_len; ++px_pos){
       px_prev = px;
-      pull(&px, pixels, Channels);
+      pull<Channels>(&px, pixels);
       f(px, px_prev);
     }
     if(px == px_prev){
@@ -356,7 +361,7 @@ class qoi{
       }
     }
 
-    push(p, padding, sizeof(padding));
+    push<sizeof(padding)>(p, padding);
   }
 
   template<typename Puller>
@@ -400,13 +405,13 @@ class qoi{
         switch(b1){ \
           __VA_ARGS__ \
           case chunk_tag::rgb: \
-            pull(&px, p, 3); \
+            pull<3>(&px, p); \
             break; \
           default: \
             switch(b1 & mask_head_2){ \
               case chunk_tag::index: \
                 px = index[b1]; \
-                push(pixels, &px, Channels); \
+                push<Channels>(pixels, &px); \
                 continue; \
               case chunk_tag::diff: \
                 px.r += ((b1 >> 4) & mask_tail_2) - 2; \
@@ -428,7 +433,7 @@ class qoi{
                   if(px_pos+run >= px_len)[[unlikely]] \
                     run = px_len-px_pos; \
                   for(std::size_t i = 0u; i <= run; ++i) \
-                    push(pixels, &px, Channels); \
+                    push<Channels>(pixels, &px); \
                   px_pos += run; \
                   continue; \
                 } \
@@ -437,13 +442,13 @@ class qoi{
         if constexpr(Channels == 4)
           QOIXX_HPP_DECODE_SWITCH(
             case chunk_tag::rgba:
-              pull(&px, p, 4);
+              pull<4>(&px, p);
               break;
           )
         else
           QOIXX_HPP_DECODE_SWITCH(
             [[unlikely]] case chunk_tag::rgba:
-              pull(&px, p, 3);
+              pull<3>(&px, p);
               p.advance(1);
               break;
           )
@@ -451,7 +456,7 @@ class qoi{
         index[px.hash() % index_size] = px;
       }
 
-      push(pixels, &px, Channels);
+      push<Channels>(pixels, &px);
     }
   }
  public:
