@@ -275,7 +275,7 @@ class qoi{
       index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
     }
 
-    const std::size_t px_len = desc.width * desc.height;
+    std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
       if(px == px_prev){
         ++run;
@@ -331,20 +331,8 @@ class qoi{
         push<3>(p, &px);
       }
     };
-    std::size_t px_pos = 0;
-    static constexpr std::size_t blocking_size = 4;
-    const auto rb_end = px_len/blocking_size*blocking_size;
-    for(; px_pos < rb_end; px_pos += blocking_size){
-      rgba_t pxs[blocking_size];
-      pull<Channels*blocking_size>(pxs, pixels);
-      f(pxs[0], px_prev);
-      f(pxs[1], pxs[0]);
-      f(pxs[2], pxs[1]);
-      f(pxs[3], pxs[2]);
-      px_prev = pxs[3];
-    }
     auto px = px_prev;
-    for(; px_pos < px_len; ++px_pos){
+    while(px_len--)[[likely]]{
       px_prev = px;
       pull<Channels>(&px, pixels);
       f(px, px_prev);
