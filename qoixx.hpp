@@ -6,6 +6,7 @@
 #include<cstring>
 #include<vector>
 #include<type_traits>
+#include<memory>
 #include<stdexcept>
 #include<bit>
 
@@ -63,6 +64,56 @@ struct default_container_operator<std::vector<T, A>>{
   }
   static inline std::size_t size(const target_type& t)noexcept{
     return t.size();
+  }
+  static constexpr bool valid(const target_type&)noexcept{
+    return true;
+  }
+};
+
+template<typename T>
+requires(sizeof(T) == 1)
+struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
+  using target_type = std::pair<std::unique_ptr<T[]>, std::size_t>;
+  static inline target_type construct(std::size_t size){
+    return {typename target_type::first_type{static_cast<T*>(::operator new(size))}, 0};
+  }
+  struct pusher{
+    static constexpr bool is_contiguous = true;
+    target_type* t;
+    inline void push(std::uint8_t x)noexcept{
+      t->first[t->second++] = static_cast<T>(x);
+    }
+    inline target_type finalize()noexcept{
+      return std::move(*t);
+    }
+    inline std::uint8_t* raw_pointer()noexcept{
+      return static_cast<std::uint8_t*>(t->first.get())+t->second;
+    }
+    inline void advance(std::size_t n)noexcept{
+      t->second += n;
+    }
+  };
+  static constexpr pusher create_pusher(target_type& t)noexcept{
+    return {&t};
+  }
+  struct puller{
+    static constexpr bool is_contiguous = true;
+    const T* t;
+    inline std::uint8_t pull()noexcept{
+      return static_cast<std::uint8_t>(*t++);
+    }
+    inline const std::uint8_t* raw_pointer()noexcept{
+      return static_cast<const std::uint8_t*>(t);
+    }
+    inline void advance(std::size_t n)noexcept{
+      t += n;
+    }
+  };
+  static constexpr puller create_puller(const target_type& t)noexcept{
+    return {t.first.get()};
+  }
+  static inline std::size_t size(const target_type& t)noexcept{
+    return t.second;
   }
   static constexpr bool valid(const target_type&)noexcept{
     return true;
