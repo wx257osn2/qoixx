@@ -48,18 +48,14 @@ struct default_container_operator<std::vector<T, A>>{
   struct puller{
     static constexpr bool is_contiguous = true;
     const T* t;
-    std::size_t i = 0;
     inline std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(t[i++]);
+      return static_cast<std::uint8_t>(*t++);
     }
     inline const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(t)+i;
+      return static_cast<const std::uint8_t*>(t);
     }
     inline void advance(std::size_t n)noexcept{
-      i += n;
-    }
-    inline std::size_t count()const noexcept{
-      return i;
+      t += n;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
@@ -80,18 +76,14 @@ struct default_container_operator<std::pair<T*, std::size_t>>{
   struct puller{
     static constexpr bool is_contiguous = true;
     const T* ptr;
-    std::size_t i = 0;
     inline std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(ptr[i++]);
+      return static_cast<std::uint8_t>(*ptr++);
     }
     inline const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(ptr)+i;
+      return static_cast<const std::uint8_t*>(ptr);
     }
     inline void advance(std::size_t n)noexcept{
-      i += n;
-    }
-    inline std::size_t count()const noexcept{
-      return i;
+      ptr += n;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
@@ -380,71 +372,93 @@ class qoi{
     if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
       index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
-    const std::size_t chunks_len = size - sizeof(padding);
-    for(std::size_t px_pos = 0; px_pos < px_len; ++px_pos){
-      if(p.count() < chunks_len)[[likely]]{
-        static constexpr std::uint32_t mask_head_2 = 0b1100'0000u;
-        static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-        static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-        static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
-        const auto b1 = p.pull();
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
+      static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
+      static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto b1 = p.pull();
+      --size;
 
 #define QOIXX_HPP_DECODE_SWITCH(...) \
+      if(b1 >= chunk_tag::run){ \
         switch(b1){ \
           __VA_ARGS__ \
           case chunk_tag::rgb: \
             pull<3>(&px, p); \
+            size -= 3; \
             break; \
-          default: \
-            switch(b1 & mask_head_2){ \
-              case chunk_tag::index: \
-                px = index[b1]; \
-                push<Channels>(pixels, &px); \
-                continue; \
-              case chunk_tag::diff: \
-                px.r += ((b1 >> 4) & mask_tail_2) - 2; \
-                px.g += ((b1 >> 2) & mask_tail_2) - 2; \
-                px.b += ( b1       & mask_tail_2) - 2; \
-                break; \
-              case chunk_tag::luma: \
-                { \
-                  const auto b2 = p.pull(); \
-                  const int vg = (b1 & mask_tail_6) - 32; \
-                  px.r += vg - 8 + ((b2 >> 4) & mask_tail_4); \
-                  px.g += vg; \
-                  px.b += vg - 8 + ( b2       & mask_tail_4); \
-                } \
-                break; \
-              case chunk_tag::run: \
-                { \
-                  std::size_t run = b1 & mask_tail_6; \
-                  if(px_pos+run >= px_len)[[unlikely]] \
-                    run = px_len-px_pos; \
-                  for(std::size_t i = 0u; i <= run; ++i) \
-                    push<Channels>(pixels, &px); \
-                  px_pos += run; \
-                  continue; \
-                } \
-            } \
-        }
-        if constexpr(Channels == 4)
-          QOIXX_HPP_DECODE_SWITCH(
-            case chunk_tag::rgba:
-              pull<4>(&px, p);
-              break;
-          )
-        else
-          QOIXX_HPP_DECODE_SWITCH(
-            [[unlikely]] case chunk_tag::rgba:
-              pull<3>(&px, p);
-              p.advance(1);
-              break;
-          )
+        default: \
+          /*run*/ \
+          std::size_t run = b1 & mask_tail_6; \
+          if(run >= px_len)[[unlikely]] \
+            run = px_len; \
+          px_len -= run; \
+          do{ \
+            push<Channels>(pixels, &px); \
+          }while(run--); \
+          return; \
+        } \
+      } \
+      else if(b1 >= chunk_tag::luma){ \
+        /*luma*/ \
+        const auto b2 = p.pull(); \
+        --size; \
+        static constexpr int vgv = chunk_tag::luma+40; \
+        const int vg = b1 - vgv; \
+        px.r += vg + (b2 >> 4); \
+        px.g += vg + 8; \
+        px.b += vg + (b2 & mask_tail_4); \
+      } \
+      else if(b1 >= chunk_tag::diff){ \
+        /*diff*/ \
+        px.r += ((b1 >> 4) & mask_tail_2) - 2; \
+        px.g += ((b1 >> 2) & mask_tail_2) - 2; \
+        px.b += ( b1       & mask_tail_2) - 2; \
+      } \
+      else{ \
+        /*index*/ \
+        if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value) \
+          px = index[b1]; \
+        else{ \
+          const auto src = index + b1; \
+          std::memcpy(&px, src, 2); \
+          px.b = src->b; \
+        } \
+        push<Channels>(pixels, &px); \
+        return; \
+      }
+      if constexpr(Channels == 4)
+        QOIXX_HPP_DECODE_SWITCH(
+          case chunk_tag::rgba:
+            pull<4>(&px, p);
+            size -= 4;
+            break;
+        )
+      else
+        QOIXX_HPP_DECODE_SWITCH(
+          [[unlikely]] case chunk_tag::rgba:
+            pull<3>(&px, p);
+            p.advance(1);
+            size -= 4;
+            break;
+        )
 #undef QOIXX_HPP_DECODE_SWITCH
+      if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
         index[px.hash() % index_size] = px;
+      else{
+        const auto dst = index + px.hash() % index_size;
+        std::memcpy(dst, &px, 2);
+        dst->b = px.b;
       }
 
       push<Channels>(pixels, &px);
+    };
+
+    while(px_len--){
+      f();
+      if(size < sizeof(padding))[[unlikely]]{
+        throw std::runtime_error("qoixx::qoi::decode: insufficient input data");
+      }
     }
   }
  public:
