@@ -161,25 +161,6 @@ class qoi{
     std::uint8_t channels;
     qoi::colorspace colorspace;
   };
-  struct rgb_t{
-    std::uint8_t r, g, b;
-    inline auto hash()const{
-      static constexpr std::uint64_t constant =
-        static_cast<std::uint64_t>(3u) << 56 |
-                                   5u  << 16 |
-        static_cast<std::uint64_t>(7u) << 40 |
-                                  11u;
-      const auto v =
-        static_cast<std::uint64_t>(r)          |
-        static_cast<std::uint64_t>(g)    << 40 |
-        static_cast<std::uint64_t>(b)    << 16 |
-        static_cast<std::uint64_t>(0xff) << 56 ;
-      return (v*constant)>>56;
-    }
-    constexpr bool operator==(const rgb_t& r)const{
-      return ((this->r^r.r)|(this->g^r.g)|(this->b^r.b)) == 0;
-    }
-  };
   struct rgba_t{
     std::uint8_t r, g, b, a;
     inline std::uint32_t v()const{
@@ -256,16 +237,11 @@ class qoi{
     p.push(Channels);
     p.push(static_cast<std::uint8_t>(desc.colorspace));
 
-    using rgba_t = std::conditional_t<Channels == 4, qoi::qoi::rgba_t, qoi::qoi::rgb_t>;
-
     rgba_t index[index_size] = {};
 
     std::size_t run = 0;
-    rgba_t px_prev = {};
-    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value){
-      px_prev.a = 255;
-      index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
-    }
+    rgba_t px_prev = {0, 0, 0, 255};
+    index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
 
     std::size_t px_len = desc.width * desc.height;
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
@@ -363,14 +339,9 @@ class qoi{
 
   template<std::size_t Channels, typename Pusher, typename Puller>
   static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
-    using rgba_t = std::conditional_t<Channels == 4, qoi::qoi::rgba_t, qoi::qoi::rgb_t>;
-
-    rgba_t px = {};
-    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
-      px.a = 255;
+    rgba_t px = {0, 0, 0, 255};
     rgba_t index[index_size] = {};
-    if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
-      index[(0*3+0*5+0*7+255*11)%index_size] = px;
+    index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
     const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
       static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
@@ -417,13 +388,7 @@ class qoi{
       } \
       else{ \
         /*index*/ \
-        if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value) \
-          px = index[b1]; \
-        else{ \
-          const auto src = index + b1; \
-          std::memcpy(&px, src, 2); \
-          px.b = src->b; \
-        } \
+        px = index[b1]; \
         push<Channels>(pixels, &px); \
         return; \
       }
@@ -443,13 +408,7 @@ class qoi{
             break;
         )
 #undef QOIXX_HPP_DECODE_SWITCH
-      if constexpr(std::is_same<rgba_t, qoi::qoi::rgba_t>::value)
-        index[px.hash() % index_size] = px;
-      else{
-        const auto dst = index + px.hash() % index_size;
-        std::memcpy(dst, &px, 2);
-        dst->b = px.b;
-      }
+      index[px.hash() % index_size] = px;
 
       push<Channels>(pixels, &px);
     };
