@@ -308,13 +308,13 @@ class qoi{
       const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
       const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
 
-      if(const std::uint8_t v = (vr|vg|vb)&0xFF; v < 4){
+      if(const std::uint8_t v = vr|vg|vb; v < 4){
         p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
         return;
       }
       const auto vg_r = vr - vg + 8;
       const auto vg_b = vb - vg + 8;
-      if(const int v = (vg_r|vg_b)&0xFF, g = (vg+30)&0xFF; v < 16 && g < 64){
+      if(const int v = vg_r|vg_b, g = vg+30; ((v&0xf0)|(g&0xc0)) == 0){
         p.push(chunk_tag::luma | g);
         p.push(vg_r << 4 | vg_b);
       }
