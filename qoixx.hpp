@@ -10,6 +10,14 @@
 #include<stdexcept>
 #include<bit>
 
+#ifndef QOIXX_NO_SIMD
+#if defined(__ARM_NEON)
+#include<arm_neon.h>
+#elif defined(__AVX2__)
+#include<immintrin.h>
+#endif
+#endif
+
 namespace qoixx{
 
 namespace detail{
@@ -281,20 +289,7 @@ class qoi{
   }
  private:
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
-  static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
-    write_32(p, magic);
-    write_32(p, desc.width);
-    write_32(p, desc.height);
-    p.push(Channels);
-    p.push(static_cast<std::uint8_t>(desc.colorspace));
-
-    rgba_t index[index_size] = {};
-
-    std::size_t run = 0;
-    rgba_t px_prev = {0, 0, 0, 255};
-    index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
-
-    std::size_t px_len = desc.width * desc.height;
+  static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::size_t run = 0){
     const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
       if(px == px_prev){
         ++run;
@@ -367,6 +362,462 @@ class qoi{
         run = 0;
       }
     }
+  }
+#if defined(__ARM_NEON) and not defined(QOIXX_NO_SIMD)
+  template<bool Alpha>
+  using pixels_type = std::conditional_t<Alpha, uint8x16x4_t, uint8x16x3_t>;
+  template<bool Alpha>
+  static inline pixels_type<Alpha> load(const std::uint8_t* ptr)noexcept{
+    if constexpr(Alpha)
+      return vld4q_u8(ptr);
+    else
+      return vld3q_u8(ptr);
+  }
+  static constexpr std::size_t simd_lanes = 16;
+  template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
+  static inline void encode_neon(Pusher& p_, Puller& pixels_, const desc& desc){
+    static constexpr bool Alpha = Channels == 4;
+    write_32(p_, magic);
+    write_32(p_, desc.width);
+    write_32(p_, desc.height);
+    p_.push(Channels);
+    p_.push(static_cast<std::uint8_t>(desc.colorspace));
+
+    std::uint8_t* p = p_.raw_pointer();
+    const std::uint8_t* pixels = pixels_.raw_pointer();
+
+    rgba_t index[index_size] = {};
+    if constexpr(!Alpha)
+      index[(0*3+0*5+0*7+255*11)%index_size].a = 255;
+
+    const auto zero = vdupq_n_u8(0);
+    static constexpr std::uint8_t iota_[simd_lanes] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    const auto iota = vld1q_u8(iota_);
+
+    pixels_type<Alpha> prev;
+    prev.val[0] = prev.val[1] = prev.val[2] = zero;
+    if constexpr(Alpha)
+      prev.val[3] = vdupq_n_u8(255);
+
+    std::size_t run = 0;
+    rgba_t px = {0, 0, 0, 255};
+    std::uint8_t prev_hash = (0*3+0*5+0*7+255*11)%64;
+
+    std::size_t px_len = desc.width * desc.height;
+    std::size_t simd_len = px_len / simd_lanes;
+    const std::size_t simd_len_16 = simd_len * simd_lanes;
+    px_len -= simd_len_16;
+    pixels_.advance(simd_len_16*Channels);
+    while(simd_len--){
+      const auto pxs = load<Alpha>(pixels);
+      pixels_type<Alpha> diff;
+      diff.val[0] = vsubq_u8(pxs.val[0], vextq_u8(prev.val[0], pxs.val[0], simd_lanes-1));
+      diff.val[1] = vsubq_u8(pxs.val[1], vextq_u8(prev.val[1], pxs.val[1], simd_lanes-1));
+      diff.val[2] = vsubq_u8(pxs.val[2], vextq_u8(prev.val[2], pxs.val[2], simd_lanes-1));
+      bool alpha = true;
+      if constexpr(Alpha){
+        diff.val[3] = vsubq_u8(pxs.val[3], vextq_u8(prev.val[3], pxs.val[3], simd_lanes-1));
+        diff.val[3] = vceqq_u8(diff.val[3], zero);
+        alpha = vminvq_u8(diff.val[3]) != 0;
+      }
+      auto runv = vceqq_u8(vorrq_u8(vorrq_u8(diff.val[0], diff.val[1]), diff.val[2]), zero);
+      if(vminvq_u8(runv) != 0 && alpha){
+        run += simd_lanes;
+        pixels += simd_lanes*Channels;
+        continue;
+      }
+      if constexpr(Alpha)
+        runv = vandq_u8(runv, diff.val[3]);
+      const auto r = vminvq_u8(vorrq_u8(vandq_u8(vmvnq_u8(runv), iota), runv));
+      run += r;
+      pixels += r*Channels;
+      if(run > 0){
+        while(run >= 62)[[unlikely]]{
+          static constexpr std::uint8_t x = chunk_tag::run | 61;
+          *p++ = x;
+          run -= 62;
+        }
+        if(run > 0){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+      }
+      const auto two = vdupq_n_u8(2);
+      diff.val[0] = vaddq_u8(diff.val[0], two);
+      diff.val[1] = vaddq_u8(diff.val[1], two);
+      diff.val[2] = vaddq_u8(diff.val[2], two);
+      const auto four = vdupq_n_u8(4);
+      const auto diffv = vandq_u8(vorrq_u8(vorrq_u8(vdupq_n_u8(chunk_tag::diff), vshlq_n_u8(diff.val[0], 4)), vorrq_u8(vshlq_n_u8(diff.val[1], 2), diff.val[2])), vcltq_u8(vorrq_u8(vorrq_u8(diff.val[0], diff.val[1]), diff.val[2]), four));
+      const auto eight = vdupq_n_u8(8);
+      diff.val[0] = vaddq_u8(vsubq_u8(diff.val[0], diff.val[1]), eight);
+      diff.val[2] = vaddq_u8(vsubq_u8(diff.val[2], diff.val[1]), eight);
+      diff.val[1] = vaddq_u8(diff.val[1], vdupq_n_u8(30));
+      const auto lu = vandq_u8(vorrq_u8(vdupq_n_u8(chunk_tag::luma), diff.val[1]), vceqq_u8(vorrq_u8(vandq_u8(vorrq_u8(diff.val[0], diff.val[2]), vdupq_n_u8(0xf0)), vandq_u8(diff.val[1], vdupq_n_u8(0xc0))), zero));
+      const auto ma = vorrq_u8(vshlq_n_u8(diff.val[0], 4), diff.val[2]);
+      uint8x16_t hash;
+      if constexpr(Alpha)
+        hash = vandq_u8(vaddq_u8(vaddq_u8(vmulq_u8(pxs.val[0], vdupq_n_u8(3)), vmulq_u8(pxs.val[1], vdupq_n_u8(5))), vaddq_u8(vmulq_u8(pxs.val[2], vdupq_n_u8(7)), vmulq_u8(pxs.val[3], vdupq_n_u8(11)))), vdupq_n_u8(63));
+      else
+        hash = vandq_u8(vaddq_u8(vaddq_u8(vmulq_u8(pxs.val[0], vdupq_n_u8(3)), vmulq_u8(pxs.val[1], vdupq_n_u8(5))), vaddq_u8(vmulq_u8(pxs.val[2], vdupq_n_u8(7)), vdupq_n_u8(static_cast<std::uint8_t>(255*11)))), vdupq_n_u8(63));
+      std::uint8_t runs[simd_lanes], diffs[simd_lanes], lus[simd_lanes], mas[simd_lanes], hashs[simd_lanes];
+      [[maybe_unused]] std::uint8_t alphas[simd_lanes];
+      vst1q_u8(runs, runv);
+      vst1q_u8(diffs, diffv);
+      vst1q_u8(lus, lu);
+      vst1q_u8(mas, ma);
+      vst1q_u8(hashs, hash);
+      if constexpr(Alpha)
+        if(!alpha)
+          vst1q_u8(alphas, diff.val[3]);
+      for(std::size_t i = r; i < simd_lanes; ++i){
+        if(runs[i]){
+          ++run;
+          pixels += Channels;
+          continue;
+        }
+        if(run == 1){
+          *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
+        else if(run > 0){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+        const auto index_pos = hashs[i];
+        prev_hash = index_pos;
+        if constexpr(Alpha)
+          std::memcpy(&px, pixels, Channels);
+        else{
+          std::memcpy(&px, pixels, 2);
+          px.b = pixels[2];
+        }
+        pixels += Channels;
+        if(index[index_pos] == px){
+          *p++ = chunk_tag::index | index_pos;
+          continue;
+        }
+        index[index_pos] = px;
+
+        if constexpr(Alpha)
+          if(!alpha && !alphas[i]){
+            *p++ = chunk_tag::rgba;
+            std::memcpy(p, &px, 4);
+            p += 4;
+            continue;
+          }
+        if(diffs[i])
+          *p++ = diffs[i];
+        else if(lus[i]){
+          *p++ = lus[i];
+          *p++ = mas[i];
+        }
+        else{
+          *p++ = chunk_tag::rgb;
+          std::memcpy(p, &px, 2);
+          p[2] = px.b;
+          p += 3;
+        }
+      }
+      prev = pxs;
+    }
+    p_.advance(p-p_.raw_pointer());
+
+    encode_body<Channels>(p_, pixels_, index, px_len, px, run);
+
+    push<sizeof(padding)>(p_, padding);
+  }
+#elif defined(__AVX2__) and not defined(QOIXX_NO_SIMD)
+  static constexpr unsigned de_bruijn_bit_position_sequence[32] = {
+    0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8, 31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
+  };
+  static constexpr unsigned lsb32(std::uint32_t x)noexcept{
+    return de_bruijn_bit_position_sequence[(static_cast<std::uint32_t>(x&-static_cast<std::int32_t>(x))*0x077cb531u) >> 27];
+  }
+  template<std::uint8_t M>
+  static inline __m256i slli_epi8(__m256i v)noexcept{
+    const auto mask = _mm256_set1_epi8(static_cast<std::uint8_t>(0xff << M) >> M);
+    return _mm256_slli_epi16(_mm256_and_si256(v, mask), M);
+  }
+  template<std::uint8_t M>
+  static inline __m256i mul_epi8(__m256i v)noexcept{
+    if constexpr(M == 0)
+      return _mm256_setzero_si256();
+    else if constexpr(M == 1)
+      return v;
+    else if constexpr(M == 2)
+      return slli_epi8<1>(v);
+    else if constexpr(M == 3)
+      return _mm256_add_epi8(slli_epi8<1>(v), v);
+    else if constexpr(M == 4)
+      return slli_epi8<2>(v);
+    else if constexpr(M == 5)
+      return _mm256_add_epi8(slli_epi8<2>(v), v);
+    else if constexpr(M == 6)
+      return _mm256_add_epi8(slli_epi8<2>(v), slli_epi8<1>(v));
+    else if constexpr(M == 7)
+      return _mm256_sub_epi8(slli_epi8<3>(v), v);
+    else if constexpr(M == 8)
+      return slli_epi8<3>(v);
+    else if constexpr(M == 9)
+      return _mm256_add_epi8(slli_epi8<3>(v), v);
+    else if constexpr(M == 10)
+      return _mm256_add_epi8(slli_epi8<3>(v), slli_epi8<1>(v));
+    else if constexpr(M == 11)
+      return _mm256_add_epi8(_mm256_add_epi8(slli_epi8<3>(v), slli_epi8<1>(v)), v);
+    else if constexpr(M == 12)
+      return _mm256_add_epi8(slli_epi8<3>(v), slli_epi8<2>(v));
+    else if constexpr(M == 13)
+      return _mm256_add_epi8(_mm256_add_epi8(slli_epi8<3>(v), slli_epi8<2>(v)), v);
+    else if constexpr(M == 14)
+      return _mm256_sub_epi8(slli_epi8<4>(v), slli_epi8<1>(v));
+    else if constexpr(M == 15)
+      return _mm256_sub_epi8(slli_epi8<4>(v), v);
+    else
+      static_assert(M <= 15);
+  }
+  static inline __m256i prev_vector(__m256i pxs, __m256i prev)noexcept{
+    const auto permute = _mm256_permute2x128_si256(pxs, pxs, 0x08);
+    const auto inserted = _mm256_inserti128_si256(permute, _mm256_extracti128_si256(prev, 1), 0);
+    return _mm256_alignr_epi8(pxs, inserted, 15);
+  }
+  template<bool Alpha>
+  struct pixels_type{
+    __m256i val[3+Alpha];
+  };
+  static constexpr std::size_t simd_lanes = 256/8;
+  template<bool Alpha>
+  static inline pixels_type<Alpha> load(const std::uint8_t* ptr)noexcept{
+    if constexpr(Alpha){
+      const auto t1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
+      const auto t2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr+simd_lanes));
+      const auto t3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr+simd_lanes*2));
+      const auto t4 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr+simd_lanes*3));
+      const auto lo12 = _mm256_unpacklo_epi8(t1, t2);
+      const auto lo34 = _mm256_unpacklo_epi8(t3, t4);
+      const auto lolo12lo34 = _mm256_unpacklo_epi16(lo12, lo34);
+      const auto hilo12lo34 = _mm256_unpackhi_epi16(lo12, lo34);
+      const auto lololo12lo34hilo12lo34 = _mm256_unpacklo_epi32(lolo12lo34, hilo12lo34);
+      const auto hilolo12lo34hilo12lo34 = _mm256_unpackhi_epi32(lolo12lo34, hilo12lo34);
+      const auto hi12 = _mm256_unpackhi_epi8(t1, t2);
+      const auto hi34 = _mm256_unpackhi_epi8(t3, t4);
+      const auto lohi12hi34 = _mm256_unpacklo_epi16(hi12, hi34);
+      const auto hihi12hi34 = _mm256_unpackhi_epi16(hi12, hi34);
+      const auto lolohi12hi34hihi12hi34 = _mm256_unpacklo_epi32(lohi12hi34, hihi12hi34);
+      const auto lolololo12lo34hilo12lo34lolohi12hi34hihi12hi34 = _mm256_unpacklo_epi64(lololo12lo34hilo12lo34, lolohi12hi34hihi12hi34);
+      const auto hilololo12lo34hilo12lo34lolohi12hi34hihi12hi34 = _mm256_unpackhi_epi64(lololo12lo34hilo12lo34, lolohi12hi34hihi12hi34);
+      const auto hilohi12hi34hihi12hi34 = _mm256_unpackhi_epi32(lohi12hi34, hihi12hi34);
+      const auto lohilolo12lo34hilo12lo34hilohi12hi34hihi12hi34 = _mm256_unpacklo_epi64(hilolo12lo34hilo12lo34, hilohi12hi34hihi12hi34);
+      const auto hihilolo12lo34hilo12lo34hilohi12hi34hihi12hi34 = _mm256_unpackhi_epi64(hilolo12lo34hilo12lo34, hilohi12hi34hihi12hi34);
+      const auto mask1 = _mm256_setr_epi8(0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);
+      const auto mask2 = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+      const auto r = _mm256_permutevar8x32_epi32(_mm256_shuffle_epi8(lolololo12lo34hilo12lo34lolohi12hi34hihi12hi34, mask1), mask2);
+      const auto g = _mm256_permutevar8x32_epi32(_mm256_shuffle_epi8(hilololo12lo34hilo12lo34lolohi12hi34hihi12hi34, mask1), mask2);
+      const auto b = _mm256_permutevar8x32_epi32(_mm256_shuffle_epi8(lohilolo12lo34hilo12lo34hilohi12hi34hihi12hi34, mask1), mask2);
+      const auto a = _mm256_permutevar8x32_epi32(_mm256_shuffle_epi8(hihilolo12lo34hilo12lo34hilohi12hi34hihi12hi34, mask1), mask2);
+      return {{r, g, b, a}};
+    }
+    else{
+      const auto t1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr));
+      const auto t2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr+simd_lanes/2));
+      const auto t3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr+simd_lanes));
+      const auto t4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr+simd_lanes*3/2));
+      const auto t5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr+simd_lanes*2));
+      const auto t6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr+simd_lanes*5/2));
+      const auto mask01 = _mm_setr_epi8(0, 3, 6, 9, 12, 15, 1, 4, 7, 10, 13, 2, 5, 8, 11, 14);
+      const auto mask02 = _mm_setr_epi8(2, 5, 8, 11, 14, 0, 3, 6, 9, 12, 15, 1, 4, 7, 10, 13);
+      const auto mask03 = _mm_setr_epi8(1, 4, 7, 10, 13, 2, 5, 8, 11, 14, 0, 3, 6, 9, 12, 15);
+      const auto mask11 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128);
+      const auto mask21 = _mm_setr_epi8(128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0);
+      const auto mask12 = _mm_setr_epi8(128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128);
+      const auto mask22 = _mm_setr_epi8(0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128);
+      const auto mask13 = _mm_setr_epi8(128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 0);
+      const auto mask23 = _mm_setr_epi8(128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128);
+      const auto x1 = _mm_shuffle_epi8(t1, mask01);
+      const auto x2 = _mm_shuffle_epi8(t2, mask02);
+      const auto x3 = _mm_shuffle_epi8(t3, mask03);
+      const auto x4 = _mm_shuffle_epi8(t4, mask01);
+      const auto x5 = _mm_shuffle_epi8(t5, mask02);
+      const auto x6 = _mm_shuffle_epi8(t6, mask03);
+      const auto r1 = _mm_blendv_epi8(_mm_alignr_epi8(x3, x3, 5), _mm_blendv_epi8(x1, _mm_alignr_epi8(x2, x2, 10), mask11), mask21);
+      const auto g1 = _mm_blendv_epi8(_mm_alignr_epi8(x1, x1, 6), _mm_blendv_epi8(x2, _mm_alignr_epi8(x3, x3, 10), mask12), mask22);
+      const auto b1 = _mm_blendv_epi8(_mm_alignr_epi8(x2, x2, 6), _mm_blendv_epi8(x3, _mm_alignr_epi8(x1, x1, 11), mask13), mask23);
+      const auto r2 = _mm_blendv_epi8(_mm_alignr_epi8(x6, x6, 5), _mm_blendv_epi8(x4, _mm_alignr_epi8(x5, x5, 10), mask11), mask21);
+      const auto g2 = _mm_blendv_epi8(_mm_alignr_epi8(x4, x4, 6), _mm_blendv_epi8(x5, _mm_alignr_epi8(x6, x6, 10), mask12), mask22);
+      const auto b2 = _mm_blendv_epi8(_mm_alignr_epi8(x5, x5, 6), _mm_blendv_epi8(x6, _mm_alignr_epi8(x4, x4, 11), mask13), mask23);
+      const auto r = _mm256_inserti128_si256(_mm256_castsi128_si256(r1), r2, 1);
+      const auto g = _mm256_inserti128_si256(_mm256_castsi128_si256(g1), g2, 1);
+      const auto b = _mm256_inserti128_si256(_mm256_castsi128_si256(b1), b2, 1);
+      return {{r, g, b}};
+    }
+  }
+  template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
+  static inline void encode_avx2(Pusher& p_, Puller& pixels_, const desc& desc){
+    static constexpr bool Alpha = Channels == 4;
+    write_32(p_, magic);
+    write_32(p_, desc.width);
+    write_32(p_, desc.height);
+    p_.push(Channels);
+    p_.push(static_cast<std::uint8_t>(desc.colorspace));
+
+    std::uint8_t* p = p_.raw_pointer();
+    const std::uint8_t* pixels = pixels_.raw_pointer();
+
+    rgba_t index[index_size] = {};
+    if constexpr(!Alpha)
+      index[(0*3+0*5+0*7+255*11)%index_size].a = 255;
+
+    const auto zero = _mm256_setzero_si256();
+
+    pixels_type<Alpha> prev;
+    prev.val[0] = prev.val[1] = prev.val[2] = zero;
+    if constexpr(Alpha)
+      prev.val[3] = _mm256_set1_epi8(255);
+
+    std::size_t run = 0;
+    rgba_t px = {0, 0, 0, 255};
+    std::uint8_t prev_hash = (0*3+0*5+0*7+255*11)%64;
+
+    std::size_t px_len = desc.width * desc.height;
+    std::size_t simd_len = px_len / simd_lanes;
+    const std::size_t simd_len_32 = simd_len * simd_lanes;
+    px_len -= simd_len_32;
+    pixels_.advance(simd_len_32*Channels);
+    while(simd_len--){
+      const auto pxs = load<Alpha>(pixels);
+      pixels_type<Alpha> diff;
+      diff.val[0] = _mm256_sub_epi8(pxs.val[0], prev_vector(pxs.val[0], prev.val[0]));
+      diff.val[1] = _mm256_sub_epi8(pxs.val[1], prev_vector(pxs.val[1], prev.val[1]));
+      diff.val[2] = _mm256_sub_epi8(pxs.val[2], prev_vector(pxs.val[2], prev.val[2]));
+      bool alpha = true;
+      if constexpr(Alpha){
+        diff.val[3] = _mm256_sub_epi8(pxs.val[3], prev_vector(pxs.val[3], prev.val[3]));
+        alpha = _mm256_testz_si256(diff.val[3], diff.val[3]);
+        diff.val[3] = _mm256_cmpeq_epi8(diff.val[3], zero);
+      }
+      const auto ored = _mm256_or_si256(_mm256_or_si256(diff.val[0], diff.val[1]), diff.val[2]);
+      auto runv = _mm256_cmpeq_epi8(ored, zero);
+      if(_mm256_testz_si256(ored, ored) && alpha){
+        run += simd_lanes;
+        pixels += simd_lanes*Channels;
+        continue;
+      }
+      if constexpr(Alpha)
+        runv = _mm256_and_si256(runv, diff.val[3]);
+      const auto r = lsb32(~_mm256_movemask_epi8(runv));
+      run += r;
+      pixels += r*Channels;
+      if(run > 0){
+        while(run >= 62)[[unlikely]]{
+          static constexpr std::uint8_t x = chunk_tag::run | 61;
+          *p++ = x;
+          run -= 62;
+        }
+        if(run > 0){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+      }
+      const auto two = _mm256_set1_epi8(2);
+      diff.val[0] = _mm256_add_epi8(diff.val[0], two);
+      diff.val[1] = _mm256_add_epi8(diff.val[1], two);
+      diff.val[2] = _mm256_add_epi8(diff.val[2], two);
+      const auto diffor = _mm256_or_si256(_mm256_or_si256(diff.val[0], diff.val[1]), diff.val[2]);
+      const auto diffv = _mm256_and_si256(_mm256_or_si256(_mm256_or_si256(_mm256_set1_epi8(chunk_tag::diff), slli_epi8<4>(diff.val[0])), _mm256_or_si256(slli_epi8<2>(diff.val[1]), diff.val[2])), _mm256_cmpeq_epi8(_mm256_and_si256(diffor, _mm256_set1_epi8(0b11)), diffor));
+      const auto eight = _mm256_set1_epi8(8);
+      diff.val[0] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[0], diff.val[1]), eight);
+      diff.val[2] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[2], diff.val[1]), eight);
+      diff.val[1] = _mm256_add_epi8(diff.val[1], _mm256_set1_epi8(30));
+      const auto lu = _mm256_and_si256(_mm256_or_si256(_mm256_set1_epi8(chunk_tag::luma), diff.val[1]), _mm256_cmpeq_epi8(_mm256_or_si256(_mm256_and_si256(_mm256_or_si256(diff.val[0], diff.val[2]), _mm256_set1_epi8(0xf0)), _mm256_and_si256(diff.val[1], _mm256_set1_epi8(0xc0))), zero));
+      const auto ma = _mm256_or_si256(slli_epi8<4>(diff.val[0]), diff.val[2]);
+      __m256i hash;
+      if constexpr(Alpha)
+        hash = _mm256_and_si256(_mm256_add_epi8(_mm256_add_epi8(mul_epi8<3>(pxs.val[0]), mul_epi8<5>(pxs.val[1])), _mm256_add_epi8(mul_epi8<7>(pxs.val[2]), mul_epi8<11>(pxs.val[3]))), _mm256_set1_epi8(63));
+      else
+        hash = _mm256_and_si256(_mm256_add_epi8(_mm256_add_epi8(mul_epi8<3>(pxs.val[0]), mul_epi8<5>(pxs.val[1])), _mm256_add_epi8(mul_epi8<7>(pxs.val[2]), _mm256_set1_epi8(static_cast<std::uint8_t>(255*11)))), _mm256_set1_epi8(63));
+      alignas(alignof(__m256i)) std::uint8_t runs[simd_lanes], diffs[simd_lanes], lus[simd_lanes], mas[simd_lanes], hashs[simd_lanes];
+      [[maybe_unused]] alignas(alignof(__m256i)) std::uint8_t alphas[simd_lanes];
+      _mm256_store_si256(reinterpret_cast<__m256i*>(runs), runv);
+      _mm256_store_si256(reinterpret_cast<__m256i*>(diffs), diffv);
+      _mm256_store_si256(reinterpret_cast<__m256i*>(lus), lu);
+      _mm256_store_si256(reinterpret_cast<__m256i*>(mas), ma);
+      _mm256_store_si256(reinterpret_cast<__m256i*>(hashs), hash);
+      if constexpr(Alpha)
+        if(!alpha)
+          _mm256_store_si256(reinterpret_cast<__m256i*>(alphas), diff.val[3]);
+      for(std::size_t i = r; i < simd_lanes; ++i){
+        if(runs[i]){
+          ++run;
+          pixels += Channels;
+          continue;
+        }
+        if(run == 1){
+          *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
+        else if(run > 0){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+        const auto index_pos = hashs[i];
+        prev_hash = index_pos;
+        if constexpr(Alpha)
+          std::memcpy(&px, pixels, Channels);
+        else{
+          std::memcpy(&px, pixels, 2);
+          px.b = pixels[2];
+        }
+        pixels += Channels;
+        if(index[index_pos] == px){
+          *p++ = chunk_tag::index | index_pos;
+          continue;
+        }
+        index[index_pos] = px;
+
+        if constexpr(Alpha)
+          if(!alpha && !alphas[i]){
+            *p++ = chunk_tag::rgba;
+            std::memcpy(p, &px, 4);
+            p += 4;
+            continue;
+          }
+        if(diffs[i])
+          *p++ = diffs[i];
+        else if(lus[i]){
+          *p++ = lus[i];
+          *p++ = mas[i];
+        }
+        else{
+          *p++ = chunk_tag::rgb;
+          std::memcpy(p, &px, 2);
+          p[2] = px.b;
+          p += 3;
+        }
+      }
+      prev = pxs;
+    }
+    p_.advance(p-p_.raw_pointer());
+
+    encode_body<Channels>(p_, pixels_, index, px_len, px, run);
+
+    push<sizeof(padding)>(p_, padding);
+  }
+#endif
+
+  template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
+  static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
+    write_32(p, magic);
+    write_32(p, desc.width);
+    write_32(p, desc.height);
+    p.push(Channels);
+    p.push(static_cast<std::uint8_t>(desc.colorspace));
+
+    rgba_t index[index_size] = {};
+
+    if constexpr(Channels == 3)
+      index[(0*3+0*5+0*7+255*11)%index_size].a = 255;
+
+    std::size_t px_len = desc.width * desc.height;
+    encode_body<Channels>(p, pixels, index, px_len);
 
     push<sizeof(padding)>(p, padding);
   }
@@ -484,10 +935,27 @@ class qoi{
     auto p = coT::create_pusher(data);
     auto puller = coU::create_puller(u);
 
-    if(desc.channels == 4)
-      encode_impl<4>(p, puller, desc);
+#ifndef QOIXX_NO_SIMD
+#if defined(__ARM_NEON)
+    if constexpr(coT::pusher::is_contiguous && coU::puller::is_contiguous)
+      if(desc.channels == 4)
+        encode_neon<4>(p, puller, desc);
+      else
+        encode_neon<3>(p, puller, desc);
     else
-      encode_impl<3>(p, puller, desc);
+#elif defined(__AVX2__)
+    if constexpr(coT::pusher::is_contiguous && coU::puller::is_contiguous)
+      if(desc.channels == 4)
+        encode_avx2<4>(p, puller, desc);
+      else
+        encode_avx2<3>(p, puller, desc);
+    else
+#endif
+#endif
+      if(desc.channels == 4)
+        encode_impl<4>(p, puller, desc);
+      else
+        encode_impl<3>(p, puller, desc);
 
     return p.finalize();
   }
