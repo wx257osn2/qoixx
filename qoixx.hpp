@@ -852,6 +852,28 @@ class qoi{
       const auto b1 = p.pull();
       --size;
 
+#if defined(__ARM_NEON) and not defined(QOIXX_NO_SIMD)
+#define QOIXX_HPP_DECODE_RUN(px, run) { \
+    ++run; \
+    if(run >= 8){\
+      std::conditional_t<Channels == 4, uint8x8x4_t, uint8x8x3_t> data = {vdup_n_u8(px.r), vdup_n_u8(px.g), vdup_n_u8(px.b)}; \
+      if constexpr(Channels == 4) \
+        data.val[3] = vdup_n_u8(px.a); \
+      while(run>=8){ \
+        if constexpr(Channels == 4) \
+          vst4_u8(pixels.raw_pointer(), data); \
+        else \
+          vst3_u8(pixels.raw_pointer(), data); \
+        pixels.advance(Channels*8); \
+        run -= 8; \
+      } \
+    } \
+    while(run--){push<Channels>(pixels, &px);} \
+  }
+#else
+#define QOIXX_HPP_DECODE_RUN(px, run) do{push<Channels>(pixels, &px);}while(run--);
+#endif
+
 #define QOIXX_HPP_DECODE_SWITCH(...) \
       if(b1 >= chunk_tag::run){ \
         switch(b1){ \
@@ -866,9 +888,7 @@ class qoi{
           if(run >= px_len)[[unlikely]] \
             run = px_len; \
           px_len -= run; \
-          do{ \
-            push<Channels>(pixels, &px); \
-          }while(run--); \
+          QOIXX_HPP_DECODE_RUN(px, run) \
           return; \
         } \
       } \
@@ -910,6 +930,7 @@ class qoi{
             break;
         )
 #undef QOIXX_HPP_DECODE_SWITCH
+#undef QOIXX_HPP_DECODE_RUN
       index[px.hash() % index_size] = px;
 
       push<Channels>(pixels, &px);
