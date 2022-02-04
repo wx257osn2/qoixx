@@ -7,6 +7,7 @@
 #include<vector>
 #include<type_traits>
 #include<stdexcept>
+#include<bit>
 
 namespace qoixx{
 
@@ -19,7 +20,7 @@ template<typename T, typename A>
 requires(sizeof(T) == 1)
 struct default_container_operator<std::vector<T, A>>{
   using target_type = std::vector<T, A>;
-  static target_type construct(std::size_t size){
+  static inline target_type construct(std::size_t size){
     target_type t(size);
     return t;
   }
@@ -27,17 +28,17 @@ struct default_container_operator<std::vector<T, A>>{
     static constexpr bool is_contiguous = true;
     target_type* t;
     std::size_t i = 0;
-    void push(std::uint8_t x)noexcept{
+    inline void push(std::uint8_t x)noexcept{
       (*t)[i++] = static_cast<T>(x);
     }
-    target_type finalize()noexcept{
+    inline target_type finalize()noexcept{
       t->resize(i);
       return std::move(*t);
     }
-    std::uint8_t* raw_pointer()noexcept{
+    inline std::uint8_t* raw_pointer()noexcept{
       return static_cast<std::uint8_t*>(t->data())+i;
     }
-    void advance(std::size_t n)noexcept{
+    inline void advance(std::size_t n)noexcept{
       i += n;
     }
   };
@@ -47,24 +48,20 @@ struct default_container_operator<std::vector<T, A>>{
   struct puller{
     static constexpr bool is_contiguous = true;
     const T* t;
-    std::size_t i = 0;
-    std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(t[i++]);
+    inline std::uint8_t pull()noexcept{
+      return static_cast<std::uint8_t>(*t++);
     }
-    const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(t)+i;
+    inline const std::uint8_t* raw_pointer()noexcept{
+      return static_cast<const std::uint8_t*>(t);
     }
-    void advance(std::size_t n)noexcept{
-      i += n;
-    }
-    std::size_t count()const noexcept{
-      return i;
+    inline void advance(std::size_t n)noexcept{
+      t += n;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.data()};
   }
-  static std::size_t size(const target_type& t)noexcept{
+  static inline std::size_t size(const target_type& t)noexcept{
     return t.size();
   }
   static constexpr bool valid(const target_type&)noexcept{
@@ -79,27 +76,23 @@ struct default_container_operator<std::pair<T*, std::size_t>>{
   struct puller{
     static constexpr bool is_contiguous = true;
     const T* ptr;
-    std::size_t i = 0;
-    std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(ptr[i++]);
+    inline std::uint8_t pull()noexcept{
+      return static_cast<std::uint8_t>(*ptr++);
     }
-    const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(ptr)+i;
+    inline const std::uint8_t* raw_pointer()noexcept{
+      return static_cast<const std::uint8_t*>(ptr);
     }
-    void advance(std::size_t n)noexcept{
-      i += n;
-    }
-    std::size_t count()const noexcept{
-      return i;
+    inline void advance(std::size_t n)noexcept{
+      ptr += n;
     }
   };
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.first};
   }
-  static std::size_t size(const target_type& t)noexcept{
+  static inline std::size_t size(const target_type& t)noexcept{
     return t.second;
   }
-  static bool valid(const target_type& t)noexcept{
+  static inline bool valid(const target_type& t)noexcept{
     return t.first != nullptr;
   }
 };
@@ -110,28 +103,40 @@ template<typename T>
 struct container_operator : detail::default_container_operator<T>{};
 
 class qoi{
-  template<typename T>
-  static void push(T& dst, const void* src, std::size_t size){
+  template<std::size_t Size, typename T>
+  static inline void push(T& dst, const void* src){
     if constexpr(T::is_contiguous){
       auto*const ptr = dst.raw_pointer();
-      dst.advance(size);
-      std::memcpy(ptr, src, size);
+      dst.advance(Size);
+      if constexpr(Size == 3){
+        std::memcpy(ptr, src, 2);
+        std::memcpy(ptr+2, static_cast<const std::uint8_t*>(src)+2, 1);
+      }
+      else
+        std::memcpy(ptr, src, Size);
     }
     else{
       const auto* ptr = static_cast<const std::uint8_t*>(src);
+      auto size = Size;
       while(size --> 0)
         dst.push(*ptr++);
     }
   }
-  template<typename T>
-  static void pull(void* dst, T& src, std::size_t size){
+  template<std::size_t Size, typename T>
+  static inline void pull(void* dst, T& src){
     if constexpr(T::is_contiguous){
       const auto*const ptr = src.raw_pointer();
-      src.advance(size);
-      std::memcpy(dst, ptr, size);
+      src.advance(Size);
+      if constexpr(Size == 3){
+        std::memcpy(dst, ptr, 2);
+        std::memcpy(static_cast<std::uint8_t*>(dst)+2, ptr+2, 1);
+      }
+      else
+        std::memcpy(dst, ptr, Size);
     }
     else{
       auto* ptr = static_cast<std::uint8_t*>(dst);
+      auto size = Size;
       while(size --> 0)
         *ptr++ = src.pull();
     }
@@ -158,19 +163,32 @@ class qoi{
   };
   struct rgba_t{
     std::uint8_t r, g, b, a;
-    std::uint32_t v()const{
+    inline std::uint32_t v()const{
       static_assert(sizeof(rgba_t) == sizeof(std::uint32_t));
-      std::uint32_t ret;
-      std::memcpy(&ret, this, sizeof(std::uint32_t));
-      return ret;
+      if constexpr(std::endian::native == std::endian::little){
+        std::uint32_t x;
+        std::memcpy(&x, this, sizeof(std::uint32_t));
+        return x;
+      }
+      else
+        return std::uint32_t{r}       |
+               std::uint32_t{g} <<  8 |
+               std::uint32_t{b} << 16 |
+               std::uint32_t{a} << 24;
     }
-    constexpr auto hash()const{
-      return r*3 + g*5 + b*7 + a*11;
+    inline auto hash()const{
+      static constexpr std::uint64_t constant =
+        static_cast<std::uint64_t>(3u) << 56 |
+                                   5u  << 16 |
+        static_cast<std::uint64_t>(7u) << 40 |
+                                  11u;
+      const auto v = static_cast<std::uint64_t>(this->v());
+      return (((v<<32|v)&0xFF00FF0000FF00FF)*constant)>>56;
     }
-    bool operator==(const rgba_t& rhs)const{
+    inline bool operator==(const rgba_t& rhs)const{
       return v() == rhs.v();
     }
-    bool operator!=(const rgba_t& rhs)const{
+    inline bool operator!=(const rgba_t& rhs)const{
       return v() != rhs.v();
     }
   };
@@ -185,100 +203,125 @@ class qoi{
   static constexpr std::size_t pixels_max = 400000000u;
   static constexpr std::uint8_t padding[8] = {0, 0, 0, 0, 0, 0, 0, 1};
   template<typename Puller>
-  static constexpr std::uint32_t read_32(Puller& p){
-    const auto _1 = p.pull();
-    const auto _2 = p.pull();
-    const auto _3 = p.pull();
-    const auto _4 = p.pull();
-    return static_cast<std::uint32_t>(_1 << 24 | _2 << 16 | _3 << 8 | _4);
+  static inline std::uint32_t read_32(Puller& p){
+    if constexpr(std::endian::native == std::endian::big && Puller::is_contiguous){
+      std::uint32_t x;
+      pull<sizeof(x)>(&x, p);
+      return x;
+    }
+    else{
+      const auto _1 = p.pull();
+      const auto _2 = p.pull();
+      const auto _3 = p.pull();
+      const auto _4 = p.pull();
+      return static_cast<std::uint32_t>(_1 << 24 | _2 << 16 | _3 << 8 | _4);
+    }
   }
   template<typename Pusher>
-  static constexpr void write_32(Pusher& p, std::uint32_t value){
-    p.push((value & 0xff000000) >> 24);
-    p.push((value & 0x00ff0000) >> 16);
-    p.push((value & 0x0000ff00) >>  8);
-    p.push( value & 0x000000ff       );
+  static inline void write_32(Pusher& p, std::uint32_t value){
+    if constexpr(std::endian::native == std::endian::big && Pusher::is_contiguous)
+      push<sizeof(value)>(p, value);
+    else{
+      p.push((value & 0xff000000) >> 24);
+      p.push((value & 0x00ff0000) >> 16);
+      p.push((value & 0x0000ff00) >>  8);
+      p.push( value & 0x000000ff       );
+    }
   }
  private:
-  template<typename Pusher, typename Puller>
-  static void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
+  template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
+  static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
     write_32(p, magic);
     write_32(p, desc.width);
     write_32(p, desc.height);
-    p.push(desc.channels);
+    p.push(Channels);
     p.push(static_cast<std::uint8_t>(desc.colorspace));
 
     rgba_t index[index_size] = {};
 
-    std::uint_fast8_t run = 0;
-    rgba_t px_prev = {.r = 0, .g = 0, .b = 0, .a = 255};
-    rgba_t px = px_prev;
+    std::size_t run = 0;
+    rgba_t px_prev = {0, 0, 0, 255};
+    index[(0*3+0*5+0*7+255*11)%index_size] = px_prev;
 
-    const std::size_t px_len = desc.width * desc.height;
-    for(std::size_t px_pos = 0; px_pos < px_len; ++px_pos){
-      pull(&px, pixels, desc.channels);
-
+    std::size_t px_len = desc.width * desc.height;
+    const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
       if(px == px_prev){
         ++run;
-        if(run == 62 || px_pos == px_len-1){
+        return;
+      }
+      if(run > 0){
+        while(run >= 62)[[unlikely]]{
+          static constexpr std::uint8_t x = chunk_tag::run | 61;
+          p.push(x);
+          run -= 62;
+        }
+        if(run == 1){
+          const auto index_pos = px_prev.hash() % index_size;
+          p.push(chunk_tag::index | index_pos);
+          run = 0;
+        }
+        else if(run > 0){
           p.push(chunk_tag::run | (run-1));
           run = 0;
         }
+      }
+
+      const auto index_pos = px.hash() % index_size;
+
+      if(index[index_pos] == px){
+        p.push(chunk_tag::index | index_pos);
+        return;
+      }
+      index[index_pos] = px;
+
+      if constexpr(Channels == 4)
+        if(px.a != px_prev.a){
+          p.push(chunk_tag::rgba);
+          push<4>(p, &px);
+          return;
+        }
+      const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
+      const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
+      const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
+
+      if(const std::uint8_t v = vr|vg|vb; v < 4){
+        p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
+        return;
+      }
+      const auto vg_r = vr - vg + 8;
+      const auto vg_b = vb - vg + 8;
+      if(const int v = vg_r|vg_b, g = vg+30; ((v&0xf0)|(g&0xc0)) == 0){
+        p.push(chunk_tag::luma | g);
+        p.push(vg_r << 4 | vg_b);
       }
       else{
-        if(run > 0){
-          p.push(chunk_tag::run | (run-1));
-          run = 0;
-        }
-
-        const auto index_pos = px.hash() % index_size;
-
-        if(index[index_pos] == px)
-          p.push(chunk_tag::index | index_pos);
-        else{
-          index[index_pos] = px;
-
-          if(px.a == px_prev.a){
-            const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r);
-            const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g);
-            const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b);
-
-            const auto vg_r = vr - vg;
-            const auto vg_b = vb - vg;
-
-            if(
-              (256-3 < vr || (-3 < vr && vr < 2) || vr < -256+2) &&
-              (256-3 < vg || (-3 < vg && vg < 2) || vg < -256+2) &&
-              (256-3 < vb || (-3 < vb && vb < 2) || vb < -256+2)
-            )
-              p.push(chunk_tag::diff | (vr+2) << 4 | (vg+2) << 2 | (vb+2));
-            else if(
-              -9  < vg_r && vg_r < 8  &&
-              (256-33 < vg || (-33 < vg && vg < 32) || vg < -256+32) &&
-              -9  < vg_b && vg_b < 8
-            ){
-              p.push(chunk_tag::luma | (vg+32));
-              p.push((vg_r+8) << 4 | (vg_b+8));
-            }
-            else{
-              p.push(chunk_tag::rgb);
-              push(p, &px, 3);
-            }
-          }
-          else{
-            p.push(chunk_tag::rgba);
-            push(p, &px, 4);
-          }
-        }
+        p.push(chunk_tag::rgb);
+        push<3>(p, &px);
       }
+    };
+    auto px = px_prev;
+    while(px_len--)[[likely]]{
       px_prev = px;
+      pull<Channels>(&px, pixels);
+      f(px, px_prev);
+    }
+    if(px == px_prev){
+      while(run >= 62)[[unlikely]]{
+        static constexpr std::uint8_t x = chunk_tag::run | 61;
+        p.push(x);
+        run -= 62;
+      }
+      if(run > 0){
+        p.push(chunk_tag::run | (run-1));
+        run = 0;
+      }
     }
 
-    push(p, padding, sizeof(padding));
+    push<sizeof(padding)>(p, padding);
   }
 
   template<typename Puller>
-  static desc decode_header(Puller& p){
+  static inline desc decode_header(Puller& p){
     desc d;
     const auto magic_ = read_32(p);
     d.width = read_32(p);
@@ -289,60 +332,99 @@ class qoi{
       d.width == 0 || d.height == 0 || magic_ != magic ||
       d.channels < 3 || d.channels > 4 ||
       d.height >= pixels_max / d.width
-    )
+    )[[unlikely]]
       throw std::runtime_error("qoixx::qoi::decode: invalid header");
     return d;
   }
 
-  template<typename Pusher, typename Puller>
-  static void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size, std::size_t channels){
+  template<std::size_t Channels, typename Pusher, typename Puller>
+  static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
     rgba_t px = {0, 0, 0, 255};
     rgba_t index[index_size] = {};
+    index[(0*3+0*5+0*7+255*11)%index_size] = px;
 
-    std::uint_fast8_t run = 0;
-    const std::size_t chunks_len = size - sizeof(padding);
-    for(std::size_t px_pos = 0; px_pos < px_len; px_pos += channels){
-      if(run > 0)
-        --run;
-      else if(p.count() < chunks_len){
-        static constexpr std::uint32_t mask_head_2 = 0b1100'0000u;
-        static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-        static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-        static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
-        const auto b1 = p.pull();
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
+      static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
+      static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto b1 = p.pull();
+      --size;
 
-        if(b1 == chunk_tag::rgb)
-          pull(&px, p, 3);
-        else if(b1 == chunk_tag::rgba)
-          pull(&px, p, 4);
-        else if((b1 & mask_head_2) == chunk_tag::index)
-          px = index[b1];
-        else if((b1 & mask_head_2) == chunk_tag::diff){
-          px.r += ((b1 >> 4) & mask_tail_2) - 2;
-          px.g += ((b1 >> 2) & mask_tail_2) - 2;
-          px.b += ( b1       & mask_tail_2) - 2;
-        }
-        else if((b1 & mask_head_2) == chunk_tag::luma){
-          const auto b2 = p.pull();
-          const int vg = (b1 & mask_tail_6) - 32;
-          px.r += vg - 8 + ((b2 >> 4) & mask_tail_4);
-          px.g += vg;
-          px.b += vg - 8 + ( b2       & mask_tail_4);
-        }
-        else if((b1 & mask_head_2) == chunk_tag::run)
-          run = b1 & mask_tail_6;
-
-        index[px.hash() % index_size] = px;
+#define QOIXX_HPP_DECODE_SWITCH(...) \
+      if(b1 >= chunk_tag::run){ \
+        switch(b1){ \
+          __VA_ARGS__ \
+          case chunk_tag::rgb: \
+            pull<3>(&px, p); \
+            size -= 3; \
+            break; \
+        default: \
+          /*run*/ \
+          std::size_t run = b1 & mask_tail_6; \
+          if(run >= px_len)[[unlikely]] \
+            run = px_len; \
+          px_len -= run; \
+          do{ \
+            push<Channels>(pixels, &px); \
+          }while(run--); \
+          return; \
+        } \
+      } \
+      else if(b1 >= chunk_tag::luma){ \
+        /*luma*/ \
+        const auto b2 = p.pull(); \
+        --size; \
+        static constexpr int vgv = chunk_tag::luma+40; \
+        const int vg = b1 - vgv; \
+        px.r += vg + (b2 >> 4); \
+        px.g += vg + 8; \
+        px.b += vg + (b2 & mask_tail_4); \
+      } \
+      else if(b1 >= chunk_tag::diff){ \
+        /*diff*/ \
+        px.r += ((b1 >> 4) & mask_tail_2) - 2; \
+        px.g += ((b1 >> 2) & mask_tail_2) - 2; \
+        px.b += ( b1       & mask_tail_2) - 2; \
+      } \
+      else{ \
+        /*index*/ \
+        px = index[b1]; \
+        push<Channels>(pixels, &px); \
+        return; \
       }
+      if constexpr(Channels == 4)
+        QOIXX_HPP_DECODE_SWITCH(
+          case chunk_tag::rgba:
+            pull<4>(&px, p);
+            size -= 4;
+            break;
+        )
+      else
+        QOIXX_HPP_DECODE_SWITCH(
+          [[unlikely]] case chunk_tag::rgba:
+            pull<3>(&px, p);
+            p.advance(1);
+            size -= 4;
+            break;
+        )
+#undef QOIXX_HPP_DECODE_SWITCH
+      index[px.hash() % index_size] = px;
 
-      push(pixels, &px, channels);
+      push<Channels>(pixels, &px);
+    };
+
+    while(px_len--){
+      f();
+      if(size < sizeof(padding))[[unlikely]]{
+        throw std::runtime_error("qoixx::qoi::decode: insufficient input data");
+      }
     }
   }
  public:
   template<typename T, typename U>
-  static T encode(const U& u, const desc& desc){
+  static inline T encode(const U& u, const desc& desc){
     using coU = container_operator<U>;
-    if(!coU::valid(u) || coU::size(u) < desc.width*desc.height*desc.channels || desc.width == 0 || desc.height == 0 || desc.channels < 3 || desc.channels > 4 || desc.height >= pixels_max / desc.width)
+    if(!coU::valid(u) || coU::size(u) < desc.width*desc.height*desc.channels || desc.width == 0 || desc.height == 0 || desc.channels < 3 || desc.channels > 4 || desc.height >= pixels_max / desc.width)[[unlikely]]
       throw std::invalid_argument{"qoixx::qoi::encode: invalid argument"};
 
     const auto max_size = static_cast<std::size_t>(desc.width) * desc.height * (desc.channels + 1) + header_size + sizeof(padding);
@@ -351,20 +433,23 @@ class qoi{
     auto p = coT::create_pusher(data);
     auto puller = coU::create_puller(u);
 
-    encode_impl(p, puller, desc);
+    if(desc.channels == 4)
+      encode_impl<4>(p, puller, desc);
+    else
+      encode_impl<3>(p, puller, desc);
 
     return p.finalize();
   }
   template<typename T, typename U>
   requires(sizeof(U) == 1)
-  static T encode(const U* pixels, std::size_t size, const desc& desc){
+  static inline T encode(const U* pixels, std::size_t size, const desc& desc){
     return encode<T>(std::make_pair(pixels, size), desc);
   }
   template<typename T, typename U>
-  static std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
+  static inline std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
     using coU = container_operator<U>;
     const auto size = coU::size(u);
-    if(!coU::valid(u) || size < header_size + sizeof(padding) || (channels != 0 && channels != 3 && channels != 4))
+    if(!coU::valid(u) || size < header_size + sizeof(padding) || (channels != 0 && channels != 3 && channels != 4))[[unlikely]]
       throw std::invalid_argument{"qoixx::qoi::decode: invalid argument"};
     auto puller = coU::create_puller(u);
 
@@ -372,18 +457,21 @@ class qoi{
     if(channels == 0)
       channels = d.channels;
 
-    const std::size_t px_len = static_cast<std::size_t>(d.width) * d.height * channels;
+    const std::size_t px_len = static_cast<std::size_t>(d.width) * d.height;
     using coT = container_operator<T>;
-    T data = coT::construct(px_len);
+    T data = coT::construct(px_len*channels);
     auto p = coT::create_pusher(data);
 
-    decode_impl(p, puller, px_len, size, channels);
+    if(channels == 4)
+      decode_impl<4>(p, puller, px_len, size);
+    else
+      decode_impl<3>(p, puller, px_len, size);
 
     return std::make_pair(std::move(p.finalize()), d);
   }
   template<typename T, typename U>
   requires(sizeof(U) == 1)
-  static std::pair<T, desc> decode(const U* pixels, std::size_t size, std::uint8_t channels = 0){
+  static inline std::pair<T, desc> decode(const U* pixels, std::size_t size, std::uint8_t channels = 0){
     return decode<T>(std::make_pair(pixels, size), channels);
   }
 };
