@@ -951,6 +951,7 @@ class qoi{
     return encode<T>(std::make_pair(pixels, size), desc);
   }
   template<typename T, typename U>
+  requires (!std::is_pointer_v<U>)
   static inline std::pair<T, desc> decode(const U& u, std::uint8_t channels = 0){
     using coU = container_operator<U>;
     const auto size = coU::size(u);
