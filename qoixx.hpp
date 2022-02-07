@@ -218,6 +218,7 @@ class qoi{
     std::uint32_t height;
     std::uint8_t channels;
     qoi::colorspace colorspace;
+    constexpr bool operator==(const desc&)const noexcept = default;
   };
   struct rgba_t{
     std::uint8_t r, g, b, a;
