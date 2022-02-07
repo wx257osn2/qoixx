@@ -162,17 +162,21 @@ template<typename T>
 struct container_operator : detail::default_container_operator<T>{};
 
 class qoi{
+  template<std::size_t Size>
+  static inline void efficient_memcpy(void* dst, const void* src){
+    if constexpr(Size == 3){
+      std::memcpy(dst, src, 2);
+      std::memcpy(static_cast<std::byte*>(dst)+2, static_cast<const std::byte*>(src)+2, 1);
+    }
+    else
+      std::memcpy(dst, src, Size);
+  }
   template<std::size_t Size, typename T>
   static inline void push(T& dst, const void* src){
     if constexpr(T::is_contiguous){
       auto*const ptr = dst.raw_pointer();
       dst.advance(Size);
-      if constexpr(Size == 3){
-        std::memcpy(ptr, src, 2);
-        std::memcpy(ptr+2, static_cast<const std::uint8_t*>(src)+2, 1);
-      }
-      else
-        std::memcpy(ptr, src, Size);
+      efficient_memcpy<Size>(ptr, src);
     }
     else{
       const auto* ptr = static_cast<const std::uint8_t*>(src);
@@ -186,12 +190,7 @@ class qoi{
     if constexpr(T::is_contiguous){
       const auto*const ptr = src.raw_pointer();
       src.advance(Size);
-      if constexpr(Size == 3){
-        std::memcpy(dst, ptr, 2);
-        std::memcpy(static_cast<std::uint8_t*>(dst)+2, ptr+2, 1);
-      }
-      else
-        std::memcpy(dst, ptr, Size);
+      efficient_memcpy<Size>(dst, ptr);
     }
     else{
       auto* ptr = static_cast<std::uint8_t*>(dst);
@@ -485,12 +484,7 @@ class qoi{
         }
         const auto index_pos = hashs[i];
         prev_hash = index_pos;
-        if constexpr(Alpha)
-          std::memcpy(&px, pixels, Channels);
-        else{
-          std::memcpy(&px, pixels, 2);
-          px.b = pixels[2];
-        }
+        efficient_memcpy<Channels>(&px, pixels);
         pixels += Channels;
         if(index[index_pos] == px){
           *p++ = chunk_tag::index | index_pos;
@@ -513,8 +507,7 @@ class qoi{
         }
         else{
           *p++ = chunk_tag::rgb;
-          std::memcpy(p, &px, 2);
-          p[2] = px.b;
+          efficient_memcpy<3>(p, &px);
           p += 3;
         }
       }
@@ -760,12 +753,7 @@ class qoi{
         }
         const auto index_pos = hashs[i];
         prev_hash = index_pos;
-        if constexpr(Alpha)
-          std::memcpy(&px, pixels, Channels);
-        else{
-          std::memcpy(&px, pixels, 2);
-          px.b = pixels[2];
-        }
+        efficient_memcpy<Channels>(&px, pixels);
         pixels += Channels;
         if(index[index_pos] == px){
           *p++ = chunk_tag::index | index_pos;
@@ -788,8 +776,7 @@ class qoi{
         }
         else{
           *p++ = chunk_tag::rgb;
-          std::memcpy(p, &px, 2);
-          p[2] = px.b;
+          efficient_memcpy<3>(p, &px);
           p += 3;
         }
       }
