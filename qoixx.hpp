@@ -606,12 +606,13 @@ class qoi{
       const auto mask01 = _mm_setr_epi8(0, 3, 6, 9, 12, 15, 1, 4, 7, 10, 13, 2, 5, 8, 11, 14);
       const auto mask02 = _mm_setr_epi8(2, 5, 8, 11, 14, 0, 3, 6, 9, 12, 15, 1, 4, 7, 10, 13);
       const auto mask03 = _mm_setr_epi8(1, 4, 7, 10, 13, 2, 5, 8, 11, 14, 0, 3, 6, 9, 12, 15);
-      const auto mask11 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128);
-      const auto mask21 = _mm_setr_epi8(128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0);
-      const auto mask12 = _mm_setr_epi8(128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128);
-      const auto mask22 = _mm_setr_epi8(0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128);
-      const auto mask13 = _mm_setr_epi8(128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 0);
-      const auto mask23 = _mm_setr_epi8(128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128);
+      static constexpr char _128 = static_cast<char>(0b1000'0000);
+      const auto mask11 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, _128, _128, _128, _128, _128, _128, _128, _128, _128, _128);
+      const auto mask21 = _mm_setr_epi8(_128, _128, _128, _128, _128, _128, _128, _128, _128, _128, _128, 0, 0, 0, 0, 0);
+      const auto mask12 = _mm_setr_epi8(_128, _128, _128, _128, _128, 0, 0, 0, 0, 0, 0, _128, _128, _128, _128, _128);
+      const auto mask22 = _mm_setr_epi8(0, 0, 0, 0, 0, _128, _128, _128, _128, _128, _128, _128, _128, _128, _128, _128);
+      const auto mask13 = _mm_setr_epi8(_128, _128, _128, _128, _128, _128, _128, _128, _128, _128, 0, 0, 0, 0, 0, 0);
+      const auto mask23 = _mm_setr_epi8(_128, _128, _128, _128, _128, 0, 0, 0, 0, 0, _128, _128, _128, _128, _128, _128);
       const auto x1 = _mm_shuffle_epi8(t1, mask01);
       const auto x2 = _mm_shuffle_epi8(t2, mask02);
       const auto x3 = _mm_shuffle_epi8(t3, mask03);
@@ -649,7 +650,7 @@ class qoi{
     pixels_type<Alpha> prev;
     prev.val[0] = prev.val[1] = prev.val[2] = zero;
     if constexpr(Alpha)
-      prev.val[3] = _mm256_set1_epi8(255);
+      prev.val[3] = _mm256_set1_epi8(static_cast<char>(0xff));
 
     std::size_t run = 0;
     rgba_t px = {0, 0, 0, 255};
@@ -704,7 +705,7 @@ class qoi{
       diff.val[0] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[0], diff.val[1]), eight);
       diff.val[2] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[2], diff.val[1]), eight);
       diff.val[1] = _mm256_add_epi8(diff.val[1], _mm256_set1_epi8(30));
-      const auto lu = _mm256_and_si256(_mm256_or_si256(_mm256_set1_epi8(chunk_tag::luma), diff.val[1]), _mm256_cmpeq_epi8(_mm256_or_si256(_mm256_and_si256(_mm256_or_si256(diff.val[0], diff.val[2]), _mm256_set1_epi8(0xf0)), _mm256_and_si256(diff.val[1], _mm256_set1_epi8(0xc0))), zero));
+      const auto lu = _mm256_and_si256(_mm256_or_si256(_mm256_set1_epi8(static_cast<char>(chunk_tag::luma)), diff.val[1]), _mm256_cmpeq_epi8(_mm256_or_si256(_mm256_and_si256(_mm256_or_si256(diff.val[0], diff.val[2]), _mm256_set1_epi8(static_cast<char>(0xf0))), _mm256_and_si256(diff.val[1], _mm256_set1_epi8(static_cast<char>(0xc0)))), zero));
       const auto ma = _mm256_or_si256(slli_epi8<4>(diff.val[0]), diff.val[2]);
       __m256i hash;
       if constexpr(Alpha)
