@@ -901,7 +901,7 @@ class qoi{
       push<Channels>(pixels, &px);
     };
 
-    while(px_len--){
+    while(px_len--)[[likely]]{
       f();
       if(size < sizeof(padding))[[unlikely]]{
         throw std::runtime_error("qoixx::qoi::decode: insufficient input data");
