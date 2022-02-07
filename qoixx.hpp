@@ -843,11 +843,11 @@ class qoi{
       if(b1 >= chunk_tag::run){ \
         switch(b1){ \
           __VA_ARGS__ \
-          case chunk_tag::rgb: \
-            pull<3>(&px, p); \
-            size -= 3; \
-            break; \
-        default: \
+         case chunk_tag::rgb: \
+          pull<3>(&px, p); \
+          size -= 3; \
+          break; \
+         default: \
           /*run*/ \
           std::size_t run = b1 & mask_tail_6; \
           if(run >= px_len)[[unlikely]] \
