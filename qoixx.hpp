@@ -235,7 +235,7 @@ class qoi{
                std::uint32_t{b} << 16 |
                std::uint32_t{a} << 24;
     }
-    inline auto hash()const{
+    inline std::uint_fast32_t hash()const{
       static constexpr std::uint64_t constant =
         static_cast<std::uint64_t>(3u) << 56 |
                                    5u  << 16 |
