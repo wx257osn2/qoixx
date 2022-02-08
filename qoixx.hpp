@@ -40,6 +40,11 @@ struct default_container_operator<std::vector<T, A>>{
     inline void push(std::uint8_t x)noexcept{
       (*t)[i++] = static_cast<T>(x);
     }
+    template<typename U>
+    requires std::unsigned_integral<U> && (sizeof(U) != 1)
+    inline void push(U t)noexcept{
+      this->push(static_cast<std::uint8_t>(t));
+    }
     inline target_type finalize()noexcept{
       t->resize(i);
       return std::move(*t);
@@ -90,6 +95,11 @@ struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
     target_type* t;
     inline void push(std::uint8_t x)noexcept{
       t->first[t->second++] = static_cast<T>(x);
+    }
+    template<typename U>
+    requires std::unsigned_integral<U> && (sizeof(U) != 1)
+    inline void push(U t)noexcept{
+      this->push(static_cast<std::uint8_t>(t));
     }
     inline target_type finalize()noexcept{
       return std::move(*t);
@@ -692,7 +702,7 @@ class qoi{
           run -= 62;
         }
         if(run > 0){
-          *p++ = chunk_tag::run | (run-1);
+          *p++ = static_cast<std::uint8_t>(chunk_tag::run | (run-1));
           run = 0;
         }
       }
@@ -730,7 +740,7 @@ class qoi{
           continue;
         }
         if(run > 0){
-          *p++ = chunk_tag::run | (run-1);
+          *p++ = static_cast<std::uint8_t>(chunk_tag::run | (run-1));
           run = 0;
         }
         const auto index_pos = hashs[i];
