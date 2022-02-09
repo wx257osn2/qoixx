@@ -37,7 +37,7 @@ struct default_container_operator<std::vector<T, A>>{
       return std::move(*t);
     }
     inline std::uint8_t* raw_pointer()noexcept{
-      return static_cast<std::uint8_t*>(t->data())+i;
+      return reinterpret_cast<std::uint8_t*>(t->data())+i;
     }
     inline void advance(std::size_t n)noexcept{
       i += n;
@@ -53,7 +53,7 @@ struct default_container_operator<std::vector<T, A>>{
       return static_cast<std::uint8_t>(*t++);
     }
     inline const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(t);
+      return reinterpret_cast<const std::uint8_t*>(t);
     }
     inline void advance(std::size_t n)noexcept{
       t += n;
@@ -87,7 +87,7 @@ struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
       return std::move(*t);
     }
     inline std::uint8_t* raw_pointer()noexcept{
-      return static_cast<std::uint8_t*>(t->first.get())+t->second;
+      return reinterpret_cast<std::uint8_t*>(t->first.get())+t->second;
     }
     inline void advance(std::size_t n)noexcept{
       t->second += n;
@@ -103,7 +103,7 @@ struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
       return static_cast<std::uint8_t>(*t++);
     }
     inline const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(t);
+      return reinterpret_cast<const std::uint8_t*>(t);
     }
     inline void advance(std::size_t n)noexcept{
       t += n;
@@ -131,7 +131,7 @@ struct default_container_operator<std::pair<T*, std::size_t>>{
       return static_cast<std::uint8_t>(*ptr++);
     }
     inline const std::uint8_t* raw_pointer()noexcept{
-      return static_cast<const std::uint8_t*>(ptr);
+      return reinterpret_cast<const std::uint8_t*>(ptr);
     }
     inline void advance(std::size_t n)noexcept{
       ptr += n;
