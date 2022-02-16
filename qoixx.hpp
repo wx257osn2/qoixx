@@ -78,8 +78,8 @@ struct default_container_operator<std::vector<T, A>>{
   static inline std::size_t size(const target_type& t)noexcept{
     return t.size();
   }
-  static constexpr bool valid(const target_type&)noexcept{
-    return true;
+  static constexpr bool valid(const target_type& t)noexcept{
+    return t.capacity() != 0;
   }
 };
 
@@ -133,8 +133,8 @@ struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
   static inline std::size_t size(const target_type& t)noexcept{
     return t.second;
   }
-  static constexpr bool valid(const target_type&)noexcept{
-    return true;
+  static constexpr bool valid(const target_type& t)noexcept{
+    return t.first != nullptr;
   }
 };
 
