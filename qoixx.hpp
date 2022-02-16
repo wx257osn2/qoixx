@@ -299,8 +299,8 @@ class qoi{
   }
  private:
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
-  static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::size_t run = 0){
-    const auto f = [&run, &index, &p](rgba_t px, rgba_t px_prev){
+  static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::uint8_t prev_hash = static_cast<std::uint8_t>(index_size), std::size_t run = 0){
+    const auto f = [&run, &index, &p, &prev_hash](rgba_t px, rgba_t px_prev){
       if(px == px_prev){
         ++run;
         return;
@@ -311,13 +311,21 @@ class qoi{
           p.push(x);
           run -= 62;
         }
-        if(run > 0){
+        if(run > 1){
           p.push(chunk_tag::run | (run-1));
+          run = 0;
+        }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            p.push(chunk_tag::run);
+          else
+            p.push(chunk_tag::index | prev_hash);
           run = 0;
         }
       }
 
       const auto index_pos = px.hash() % index_size;
+      prev_hash = index_pos;
 
       if(index[index_pos] == px){
         p.push(chunk_tag::index | index_pos);
@@ -404,6 +412,7 @@ class qoi{
 
     std::size_t run = 0;
     rgba_t px = {0, 0, 0, 255};
+    auto prev_hash = static_cast<std::uint8_t>(index_size);
 
     std::size_t px_len = desc.width * desc.height;
     std::size_t simd_len = px_len / simd_lanes;
@@ -439,8 +448,15 @@ class qoi{
           *p++ = x;
           run -= 62;
         }
-        if(run > 0){
+        if(run > 1){
           *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
           run = 0;
         }
       }
@@ -477,11 +493,19 @@ class qoi{
           pixels += Channels;
           continue;
         }
-        if(run > 0){
+        if(run > 1){
           *p++ = chunk_tag::run | (run-1);
           run = 0;
         }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
         const auto index_pos = hashs[i];
+        prev_hash = index_pos;
         efficient_memcpy<Channels>(&px, pixels);
         pixels += Channels;
         if(index[index_pos] == px){
@@ -513,7 +537,7 @@ class qoi{
     }
     p_.advance(p-p_.raw_pointer());
 
-    encode_body<Channels>(p_, pixels_, index, px_len, px, run);
+    encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
 
     push<sizeof(padding)>(p_, padding);
   }
@@ -665,6 +689,7 @@ class qoi{
 
     std::size_t run = 0;
     rgba_t px = {0, 0, 0, 255};
+    auto prev_hash = static_cast<std::uint8_t>(index_size);
 
     std::size_t px_len = desc.width * desc.height;
     std::size_t simd_len = px_len / simd_lanes;
@@ -701,8 +726,15 @@ class qoi{
           *p++ = x;
           run -= 62;
         }
-        if(run > 0){
+        if(run > 1){
           *p++ = static_cast<std::uint8_t>(chunk_tag::run | (run-1));
+          run = 0;
+        }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
           run = 0;
         }
       }
@@ -739,11 +771,19 @@ class qoi{
           pixels += Channels;
           continue;
         }
-        if(run > 0){
+        if(run > 1){
           *p++ = static_cast<std::uint8_t>(chunk_tag::run | (run-1));
           run = 0;
         }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
         const auto index_pos = hashs[i];
+        prev_hash = index_pos;
         efficient_memcpy<Channels>(&px, pixels);
         pixels += Channels;
         if(index[index_pos] == px){
@@ -775,7 +815,7 @@ class qoi{
     }
     p_.advance(p-p_.raw_pointer());
 
-    encode_body<Channels>(p_, pixels_, index, px_len, px, run);
+    encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
 
     push<sizeof(padding)>(p_, padding);
   }
