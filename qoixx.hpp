@@ -261,6 +261,25 @@ class qoi{
       return v() != rhs.v();
     }
   };
+  struct rgb_t{
+    std::uint8_t r, g, b;
+    inline std::uint_fast32_t hash()const{
+      static constexpr std::uint64_t constant =
+        static_cast<std::uint64_t>(3u) << 56 |
+                                   5u  << 16 |
+        static_cast<std::uint64_t>(7u) << 40 |
+                                  11u;
+      const auto v =
+        static_cast<std::uint64_t>(r)          |
+        static_cast<std::uint64_t>(g)    << 40 |
+        static_cast<std::uint64_t>(b)    << 16 |
+        static_cast<std::uint64_t>(0xff) << 56 ;
+      return (v*constant)>>56;
+    }
+    inline bool operator==(const rgb_t& rhs)const{
+      return ((this->r^rhs.r)|(this->g^rhs.g)|(this->b^rhs.b)) == 0;
+    }
+  };
   static constexpr std::uint32_t magic = 
     113u /*q*/ << 24 | 111u /*o*/ << 16 | 105u /*i*/ <<  8 | 102u /*f*/ ;
   static constexpr std::size_t header_size =
@@ -856,10 +875,15 @@ class qoi{
 
   template<std::size_t Channels, typename Pusher, typename Puller>
   static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
-    rgba_t px = {0, 0, 0, 255};
+#ifndef __aarch64__
+    using rgba_t = std::conditional_t<Channels == 4, qoi::rgba_t, qoi::rgb_t>;
+#endif
+    rgba_t px = {};
+    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+      px.a = 255;
     rgba_t index[index_size];
-    index[(0*3+0*5+0*7+0*11)%index_size] = {};
-    index[(0*3+0*5+0*7+255*11)%index_size] = px;
+    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+      index[(0*3+0*5+0*7+0*11)%index_size] = {};
 
     const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
       static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
@@ -926,7 +950,10 @@ class qoi{
       } \
       else{ \
         /*index*/ \
-        px = index[b1]; \
+        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value) \
+          px = index[b1]; \
+        else \
+          efficient_memcpy<Channels>(&px, index + b1); \
         push<Channels>(pixels, &px); \
         return; \
       }
@@ -947,7 +974,10 @@ class qoi{
         )
 #undef QOIXX_HPP_DECODE_SWITCH
 #undef QOIXX_HPP_DECODE_RUN
-      index[px.hash() % index_size] = px;
+      if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+        index[px.hash() % index_size] = px;
+      else
+        efficient_memcpy<Channels>(index + px.hash() % index_size, &px);
 
       push<Channels>(pixels, &px);
     };
