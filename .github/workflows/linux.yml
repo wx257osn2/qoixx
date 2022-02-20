@@ -1,0 +1,39 @@
+name: CI on Ubuntu
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  ci-ubuntu:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: setup g++-11
+      shell: bash
+      run: |
+        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+        sudo apt install -y g++-11
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 --slave /usr/bin/g++ g++ /usr/bin/g++-11
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - uses: actions/cache@v2
+      with:
+        path: images
+        key: key
+    - id: cached
+      uses: andstor/file-existence-action@v1
+      with:
+        files: images
+    - name: get benchmark suite
+      if: steps.cached.outputs.files_exists == 'false'
+      shell: bash
+      run: curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
+    - name: build
+      shell: bash
+      run: make -j
+    - name: run
+      shell: bash
+      run: bin/qoibench 1 images --noreference --nowarmup
