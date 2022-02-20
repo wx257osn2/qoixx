@@ -55,7 +55,7 @@ struct options{
   bool only_totals = false;
   unsigned runs;
   bool parse_option(std::string_view argv){
-    if(argv == "--nowramup")
+    if(argv == "--nowarmup")
       this->warmup = false;
     else if(argv == "--noverify")
       this->verify = false;
