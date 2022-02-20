@@ -55,7 +55,7 @@ struct options{
   bool only_totals = false;
   unsigned runs;
   bool parse_option(std::string_view argv){
-    if(argv == "--nowramup")
+    if(argv == "--nowarmup")
       this->warmup = false;
     else if(argv == "--noverify")
       this->verify = false;
@@ -288,6 +288,7 @@ static inline int help(const char* argv_0, std::ostream& os = std::cout){
         "Options:\n"
         "    --nowarmup ... don't perform a warmup run\n"
         "    --noverify ... don't verify qoi roundtrip\n"
+        "    --noreference  don't run reference implementation\n"
         "    --noencode ... don't run encoders\n"
         "    --nodecode ... don't run decoders\n"
         "    --norecurse .. don't descend into directories\n"
