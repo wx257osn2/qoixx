@@ -894,21 +894,25 @@ class qoi{
 
 #if defined(__ARM_NEON) and not defined(QOIXX_NO_SIMD)
 #define QOIXX_HPP_DECODE_RUN(px, run) { \
-    ++run; \
-    if(run >= 8){\
-      std::conditional_t<Channels == 4, uint8x8x4_t, uint8x8x3_t> data = {vdup_n_u8(px.r), vdup_n_u8(px.g), vdup_n_u8(px.b)}; \
-      if constexpr(Channels == 4) \
-        data.val[3] = vdup_n_u8(px.a); \
-      while(run>=8){ \
+    if constexpr(Pusher::is_contiguous){ \
+      ++run; \
+      if(run >= 8){ \
+        std::conditional_t<Channels == 4, uint8x8x4_t, uint8x8x3_t> data = {vdup_n_u8(px.r), vdup_n_u8(px.g), vdup_n_u8(px.b)}; \
         if constexpr(Channels == 4) \
-          vst4_u8(pixels.raw_pointer(), data); \
-        else \
-          vst3_u8(pixels.raw_pointer(), data); \
-        pixels.advance(Channels*8); \
-        run -= 8; \
+          data.val[3] = vdup_n_u8(px.a); \
+        while(run>=8){ \
+          if constexpr(Channels == 4) \
+            vst4_u8(pixels.raw_pointer(), data); \
+          else \
+            vst3_u8(pixels.raw_pointer(), data); \
+          pixels.advance(Channels*8); \
+          run -= 8; \
+        } \
       } \
+      while(run--){push<Channels>(pixels, &px);} \
     } \
-    while(run--){push<Channels>(pixels, &px);} \
+    else \
+      do{push<Channels>(pixels, &px);}while(run--); \
   }
 #else
 #define QOIXX_HPP_DECODE_RUN(px, run) do{push<Channels>(pixels, &px);}while(run--);
