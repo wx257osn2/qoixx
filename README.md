@@ -10,11 +10,11 @@ qoixx has the features below:
 - MIT licensed
 - no dependencies, except for the standard library and architecture-specific headers included with the common compilers
 - extremely fast implementation
-    - encoder: SIMD-based implementation
+    - encoder: SIMD-based implementation, one of the fastest implementation
         - On x86_64, qoixx uses AVX2 if available
         - On ARMv8, qoixx uses ARM SIMD(NEON) if available
         - If not available, qoixx encoder runs without SIMD instructions (but the scalar implementation is still faster than the [original implementation](https://github.com/phoboslab/qoi))
-        - When you don't want to use SIMD implementation or want to break the dependency to architecture-specific headers, you can use `QOIXX_NO_SIMD` macro. `QOIXX_NO_SIMD` forces qoixx encoder to use scalar implementation.
+        - When you don't want to use SIMD implementation or want to break the dependency to architecture-specific headers, you can use `QOIXX_NO_SIMD` macro. `QOIXX_NO_SIMD` forces qoixx encoder to use the scalar implementation.
     - decoder: Optimized scalar implementation, averagely fast
         - With some input, [original implementation](https://github.com/phoboslab/qoi) is faster
 
