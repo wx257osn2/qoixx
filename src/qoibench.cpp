@@ -193,31 +193,13 @@ static inline benchmark_result_t benchmark_image(const std::filesystem::path& p,
     {// qoixx.encode -> qoi.decode == pixels
       ::qoi_desc dc;
       const auto pixs = std::unique_ptr<std::uint8_t[], decltype(&::free)>{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.data(), static_cast<int>(encoded_qoixx.size()), &dc, channels)), &::free};
-      if(dc.width != qoixx_desc.width || dc.height != qoixx_desc.height || dc.channels != qoixx_desc.channels || dc.colorspace != static_cast<unsigned char>(qoixx_desc.colorspace) || std::memcmp(pixels.get(), pixs.get(), dc.width*dc.height*dc.channels) != 0){
-        std::cout << dc.width << ' ' << qoixx_desc.width << '\n'
-                  << dc.height << ' ' << qoixx_desc.height << '\n'
-                  << +dc.channels << ' ' << +qoixx_desc.channels << '\n'
-                  << +dc.colorspace << ' ' << static_cast<int>(qoixx_desc.colorspace) << std::endl;
-        auto j = 0;
-        for(std::size_t i = 0; i < dc.width*dc.height*dc.channels; ++i)
-          if(pixs.get()[i] != pixels.get()[i]){
-            std::cout << i << ": " << +pixs[i] << " != " << +pixels[i] << std::endl;
-            if(++j == 3)
-              break;
-          }
+      if(dc.width != qoixx_desc.width || dc.height != qoixx_desc.height || dc.channels != qoixx_desc.channels || dc.colorspace != static_cast<unsigned char>(qoixx_desc.colorspace) || std::memcmp(pixels.get(), pixs.get(), dc.width*dc.height*dc.channels) != 0)
         throw std::runtime_error("QOIxx encoder pixel mismatch for " + p.string());
-      }
     }
     {// qoixx.encode -> qoixx.decode == pixels
       const auto [pixs, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(encoded_qoixx);
-      if(desc != qoixx_desc || std::memcmp(pixels.get(), pixs.data(), desc.width*desc.height*desc.channels) != 0){
-        for(std::size_t i = 0; i < desc.width*desc.height*desc.channels; ++i)
-          if(pixs[i] != pixels.get()[i]){
-            std::cout << i << ": " << +pixs[i] << " != " << +pixels[i] << std::endl;
-            break;
-          }
+      if(desc != qoixx_desc || std::memcmp(pixels.get(), pixs.data(), desc.width*desc.height*desc.channels) != 0)
         throw std::runtime_error("QOIxx roundtrip pixel mismatch for " + p.string());
-      }
     }
   }
 
