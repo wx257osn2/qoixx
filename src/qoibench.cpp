@@ -129,8 +129,8 @@ struct benchmark_result_t{
       const auto qoixx_dmpps = res.qoixx.decode_time.count() != 0 ? px / std::chrono::duration_cast<std::chrono::duration<double, std::micro>>(qoixx_dtime).count() : 0.;
       os << "        decode ms   encode ms   decode mpps   encode mpps   size kb    rate\n";
       if(printer.opt->reference)
-        std::cout << "qoi:     " << manip{8, 4} << qoi_dtime.count() << "    " << manip{8, 4} << qoi_etime.count() << "      " << manip{8, 3} << qoi_dmpps << "      " << manip{8, 3} << qoi_empps << "  " << manip{8} << qoi_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoi_size)/raw_size*100. << "%\n";
-      std::cout << "qoixx:   " << manip{8, 4} << qoixx_dtime.count() << "    " << manip{8, 4} << qoixx_etime.count() << "      " << manip{8, 3} << qoixx_dmpps << "      " << manip{8, 3} << qoixx_empps << "  " << manip{8} << qoixx_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoixx_size)/raw_size*100. << "%\n";
+        os << "qoi:     " << manip{8, 4} << qoi_dtime.count() << "    " << manip{8, 4} << qoi_etime.count() << "      " << manip{8, 3} << qoi_dmpps << "      " << manip{8, 3} << qoi_empps << "  " << manip{8} << qoi_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoi_size)/raw_size*100. << "%\n";
+      os << "qoixx:   " << manip{8, 4} << qoixx_dtime.count() << "    " << manip{8, 4} << qoixx_etime.count() << "      " << manip{8, 3} << qoixx_dmpps << "      " << manip{8, 3} << qoixx_empps << "  " << manip{8} << qoixx_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoixx_size)/raw_size*100. << "%\n";
       return os;
     }
   };
