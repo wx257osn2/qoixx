@@ -129,8 +129,8 @@ struct benchmark_result_t{
       const auto qoixx_dmpps = res.qoixx.decode_time.count() != 0 ? px / std::chrono::duration_cast<std::chrono::duration<double, std::micro>>(qoixx_dtime).count() : 0.;
       os << "        decode ms   encode ms   decode mpps   encode mpps   size kb    rate\n";
       if(printer.opt->reference)
-        std::cout << "qoi:     " << manip{8, 4} << qoi_dtime.count() << "    " << manip{8, 4} << qoi_etime.count() << "      " << manip{8, 3} << qoi_dmpps << "      " << manip{8, 3} << qoi_empps << "  " << manip{8} << qoi_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoi_size)/raw_size*100. << "%\n";
-      std::cout << "qoixx:   " << manip{8, 4} << qoixx_dtime.count() << "    " << manip{8, 4} << qoixx_etime.count() << "      " << manip{8, 3} << qoixx_dmpps << "      " << manip{8, 3} << qoixx_empps << "  " << manip{8} << qoixx_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoixx_size)/raw_size*100. << "%\n";
+        os << "qoi:     " << manip{8, 4} << qoi_dtime.count() << "    " << manip{8, 4} << qoi_etime.count() << "      " << manip{8, 3} << qoi_dmpps << "      " << manip{8, 3} << qoi_empps << "  " << manip{8} << qoi_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoi_size)/raw_size*100. << "%\n";
+      os << "qoixx:   " << manip{8, 4} << qoixx_dtime.count() << "    " << manip{8, 4} << qoixx_etime.count() << "      " << manip{8, 3} << qoixx_dmpps << "      " << manip{8, 3} << qoixx_empps << "  " << manip{8} << qoixx_size/1024 << "   " << manip{4, 1} << static_cast<double>(qoixx_size)/raw_size*100. << "%\n";
       return os;
     }
   };
@@ -193,31 +193,13 @@ static inline benchmark_result_t benchmark_image(const std::filesystem::path& p,
     {// qoixx.encode -> qoi.decode == pixels
       ::qoi_desc dc;
       const auto pixs = std::unique_ptr<std::uint8_t[], decltype(&::free)>{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.data(), static_cast<int>(encoded_qoixx.size()), &dc, channels)), &::free};
-      if(dc.width != qoixx_desc.width || dc.height != qoixx_desc.height || dc.channels != qoixx_desc.channels || dc.colorspace != static_cast<unsigned char>(qoixx_desc.colorspace) || std::memcmp(pixels.get(), pixs.get(), dc.width*dc.height*dc.channels) != 0){
-        std::cout << dc.width << ' ' << qoixx_desc.width << '\n'
-                  << dc.height << ' ' << qoixx_desc.height << '\n'
-                  << +dc.channels << ' ' << +qoixx_desc.channels << '\n'
-                  << +dc.colorspace << ' ' << static_cast<int>(qoixx_desc.colorspace) << std::endl;
-        auto j = 0;
-        for(std::size_t i = 0; i < dc.width*dc.height*dc.channels; ++i)
-          if(pixs.get()[i] != pixels.get()[i]){
-            std::cout << i << ": " << +pixs[i] << " != " << +pixels[i] << std::endl;
-            if(++j == 3)
-              break;
-          }
+      if(dc.width != qoixx_desc.width || dc.height != qoixx_desc.height || dc.channels != qoixx_desc.channels || dc.colorspace != static_cast<unsigned char>(qoixx_desc.colorspace) || std::memcmp(pixels.get(), pixs.get(), dc.width*dc.height*dc.channels) != 0)
         throw std::runtime_error("QOIxx encoder pixel mismatch for " + p.string());
-      }
     }
     {// qoixx.encode -> qoixx.decode == pixels
       const auto [pixs, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(encoded_qoixx);
-      if(desc != qoixx_desc || std::memcmp(pixels.get(), pixs.data(), desc.width*desc.height*desc.channels) != 0){
-        for(std::size_t i = 0; i < desc.width*desc.height*desc.channels; ++i)
-          if(pixs[i] != pixels.get()[i]){
-            std::cout << i << ": " << +pixs[i] << " != " << +pixels[i] << std::endl;
-            break;
-          }
+      if(desc != qoixx_desc || std::memcmp(pixels.get(), pixs.data(), desc.width*desc.height*desc.channels) != 0)
         throw std::runtime_error("QOIxx roundtrip pixel mismatch for " + p.string());
-      }
     }
   }
 
