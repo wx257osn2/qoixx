@@ -898,6 +898,30 @@ class qoi{
     }
     return table;
   }
+  static constexpr std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> create_luma_table(){
+    std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> table;
+    for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
+      constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      const auto vr = (i >> 4);
+      const auto vb = (i & mask_tail_4);
+      table[i][0] = vr;
+      table[i][1] = vb;
+    }
+    return table;
+  }
+  static constexpr std::array<std::array<std::int8_t, 3>, chunk_tag::luma> create_diff_table(){
+    std::array<std::array<std::int8_t, 3>, chunk_tag::luma> table;
+    for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
+      constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto vr = ((i >> 4) & mask_tail_2) - 2;
+      const auto vg = ((i >> 2) & mask_tail_2) - 2;
+      const auto vb = ( i       & mask_tail_2) - 2;
+      table[i][0] = vr;
+      table[i][1] = vg;
+      table[i][2] = vb;
+    }
+    return table;
+  }
 
   template<std::size_t Channels, typename Pusher, typename Puller>
   static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
@@ -916,8 +940,6 @@ class qoi{
 
     const auto f = [&pixels, &p, &px_len, &size, &px, &index, &hash]{
       static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-      static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-      static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
       const auto b1 = p.pull();
       --size;
 
@@ -970,18 +992,22 @@ class qoi{
         /*luma*/ \
         const auto b2 = p.pull(); \
         --size; \
+        static constexpr auto table = create_luma_table(); \
+        const auto drb = table[b2]; \
         static constexpr int vgv = chunk_tag::luma+40; \
         const int vg = b1 - vgv; \
-        px.r += vg + (b2 >> 4); \
+        px.r += vg + drb[0]; \
         px.g += vg + 8; \
-        px.b += vg + (b2 & mask_tail_4); \
+        px.b += vg + drb[1]; \
         hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size; \
       } \
       else if(b1 >= chunk_tag::diff){ \
         /*diff*/ \
-        px.r += ((b1 >> 4) & mask_tail_2) - 2; \
-        px.g += ((b1 >> 2) & mask_tail_2) - 2; \
-        px.b += ( b1       & mask_tail_2) - 2; \
+        static constexpr auto table = create_diff_table(); \
+        const auto drgb = table[b1];\
+        px.r += drgb[0]; \
+        px.g += drgb[1]; \
+        px.b += drgb[2]; \
         hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size; \
       } \
       else{ \
