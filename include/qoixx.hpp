@@ -9,6 +9,8 @@
 #include<memory>
 #include<stdexcept>
 #include<bit>
+#include<numeric>
+#include<array>
 
 #ifndef QOIXX_NO_SIMD
 #if defined(__ARM_NEON)
@@ -873,6 +875,30 @@ class qoi{
     return d;
   }
 
+  static constexpr std::size_t hash_table_offset = std::numeric_limits<std::uint8_t>::max()+1 - chunk_tag::diff;
+  static constexpr std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> create_hash_diff_table(){
+    std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> table;
+    for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
+      constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      const auto vr = (i >> 4);
+      const auto vb = (i & mask_tail_4);
+      table[i] = vr*3 + vb*7;
+    }
+    for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
+      constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto vr = ((i >> 4) & mask_tail_2) - 2;
+      const auto vg = ((i >> 2) & mask_tail_2) - 2;
+      const auto vb = ( i       & mask_tail_2) - 2;
+      table[i+hash_table_offset] = vr*3 + vg*5 + vb*7;
+    }
+    for(std::size_t i = chunk_tag::luma; i < chunk_tag::run; ++i){
+        constexpr int vgv = chunk_tag::luma+40;
+        const int vg = i - vgv;
+        table[i+hash_table_offset] = vg*3 + (vg+8)*5 + vg*7;
+    }
+    return table;
+  }
+
   template<std::size_t Channels, typename Pusher, typename Puller>
   static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
 #ifndef __aarch64__
@@ -884,8 +910,11 @@ class qoi{
     rgba_t index[index_size];
     if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
       index[(0*3+0*5+0*7+0*11)%index_size] = {};
+    auto hash = px.hash() % index_size;
+    static constexpr auto luma_hash_diff_table = create_hash_diff_table();
+    static constexpr auto hash_diff_table = luma_hash_diff_table.data() + hash_table_offset;
 
-    const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index, &hash]{
       static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
       static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
@@ -925,6 +954,7 @@ class qoi{
          case chunk_tag::rgb: \
           pull<3>(&px, p); \
           size -= 3; \
+          hash = px.hash() % index_size; \
           break; \
          default: \
           /*run*/ \
@@ -945,12 +975,14 @@ class qoi{
         px.r += vg + (b2 >> 4); \
         px.g += vg + 8; \
         px.b += vg + (b2 & mask_tail_4); \
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size; \
       } \
       else if(b1 >= chunk_tag::diff){ \
         /*diff*/ \
         px.r += ((b1 >> 4) & mask_tail_2) - 2; \
         px.g += ((b1 >> 2) & mask_tail_2) - 2; \
         px.b += ( b1       & mask_tail_2) - 2; \
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size; \
       } \
       else{ \
         /*index*/ \
@@ -959,6 +991,7 @@ class qoi{
         else \
           efficient_memcpy<Channels>(&px, index + b1); \
         push<Channels>(pixels, &px); \
+        hash = b1; \
         return; \
       }
       if constexpr(Channels == 4)
@@ -966,6 +999,7 @@ class qoi{
           case chunk_tag::rgba:
             pull<4>(&px, p);
             size -= 4;
+            hash = px.hash() % index_size;
             break;
         )
       else
@@ -974,14 +1008,15 @@ class qoi{
             pull<3>(&px, p);
             p.advance(1);
             size -= 4;
+            hash = px.hash() % index_size;
             break;
         )
 #undef QOIXX_HPP_DECODE_SWITCH
 #undef QOIXX_HPP_DECODE_RUN
       if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
-        index[px.hash() % index_size] = px;
+        index[hash] = px;
       else
-        efficient_memcpy<Channels>(index + px.hash() % index_size, &px);
+        efficient_memcpy<Channels>(index + hash, &px);
 
       push<Channels>(pixels, &px);
     };
