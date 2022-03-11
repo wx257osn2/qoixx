@@ -988,6 +988,16 @@ class qoi{
           return; \
         } \
       } \
+      else if(b1 < chunk_tag::diff){ \
+        /*index*/ \
+        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value) \
+          px = index[b1]; \
+        else \
+          efficient_memcpy<Channels>(&px, index + b1); \
+        push<Channels>(pixels, &px); \
+        hash = b1; \
+        return; \
+      } \
       else if(b1 >= chunk_tag::luma){ \
         /*luma*/ \
         const auto b2 = p.pull(); \
@@ -1001,7 +1011,7 @@ class qoi{
         px.b += vg + drb[1]; \
         hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size; \
       } \
-      else if(b1 >= chunk_tag::diff){ \
+      else{ \
         /*diff*/ \
         static constexpr auto table = create_diff_table(); \
         const auto drgb = table[b1];\
@@ -1009,16 +1019,6 @@ class qoi{
         px.g += drgb[1]; \
         px.b += drgb[2]; \
         hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size; \
-      } \
-      else{ \
-        /*index*/ \
-        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value) \
-          px = index[b1]; \
-        else \
-          efficient_memcpy<Channels>(&px, index + b1); \
-        push<Channels>(pixels, &px); \
-        hash = b1; \
-        return; \
       }
       if constexpr(Channels == 4)
         QOIXX_HPP_DECODE_SWITCH(
