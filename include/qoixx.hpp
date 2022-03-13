@@ -88,7 +88,7 @@ requires(sizeof(T) == 1)
 struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
   using target_type = std::pair<std::unique_ptr<T[]>, std::size_t>;
   static inline target_type construct(std::size_t size){
-    return {typename target_type::first_type{static_cast<T*>(::operator new(size))}, 0};
+    return {typename target_type::first_type{static_cast<T*>(::operator new[](size))}, 0};
   }
   struct pusher{
     static constexpr bool is_contiguous = true;
