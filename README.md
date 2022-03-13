@@ -24,23 +24,23 @@ qoixx has the features below:
 # Grand total for qoi benchmark suite, 20 iterations
 #   https://qoiformat.org/benchmark/qoi_benchmark_suite.tar
         decode ms   encode ms   decode mpps   encode mpps   size kb    rate
-## Intel Core i9-10900
+## Intel Core i9-10900, Linux 5.11.0, g++ 11.1.0
 qoi:       2.2226      2.5331       208.843       183.247       463   28.2%
 qoixx:     1.3753      1.5134       337.518       306.706       463   28.2%
 
-## AMD Ryzen7 2700X
+## AMD Ryzen7 2700X, Linux 5.4.0, g++ 11.0.0 20200622 (experimental)
 qoi:       2.1826      2.7039       212.673       171.671       463   28.2%
 qoixx:     1.6523      1.5448       280.928       300.470       463   28.2%
 
-## AMD Ryzen9 3950X
+## AMD Ryzen9 3950X, Windows + MSYS2 ucrt64, g++ 11.2.0
 qoi:       2.2756      2.5869       203.978       179.435       463   28.2%
 qoixx:     1.5453      1.5821       300.381       293.402       463   28.2%
 
-## Qualcomm Kyro 585
+## Qualcomm Kyro 585, Linux 4.19.125, g++ 11.1.0
 qoi:       2.5395      2.7791       182.785       167.027       463   28.2%
 qoixx:     1.7685      1.8228       262.473       254.648       463   28.2%
 
-## Apple M1 Max
+## Apple M1 Max, Mac, g++ 11.2.0
 qoi:       1.7461      2.1248       265.840       218.461       463   28.2%
 qoixx:     1.1440      1.4430       405.750       321.683       463   28.2%
 ```
