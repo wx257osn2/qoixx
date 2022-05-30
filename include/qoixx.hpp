@@ -992,89 +992,83 @@ class qoi{
 #define QOIXX_HPP_DECODE_RUN(px, run) do{push<Channels>(pixels, &px);}while(run--);
 #endif
 
-#define QOIXX_HPP_DECODE_SWITCH(...) \
-      if(b1 >= chunk_tag::run){ \
-        switch(b1){ \
-          __VA_ARGS__ \
-         case chunk_tag::rgb: \
-          pull<3>(&px, p); \
-          size -= 3; \
-          QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;) \
-          break; \
-         default: \
-          /*run*/ \
-          std::size_t run = b1 & mask_tail_6; \
-          if(run >= px_len)[[unlikely]] \
-            run = px_len; \
-          px_len -= run; \
-          QOIXX_HPP_DECODE_RUN(px, run) \
-          return; \
-        } \
-      } \
-      else if(b1 < chunk_tag::diff){ \
-        /*index*/ \
-        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value) \
-          px = index[b1]; \
-        else \
-          efficient_memcpy<Channels>(&px, index + b1); \
-        push<Channels>(pixels, &px); \
-        QOIXX_HPP_WITH_TABLES(hash = b1;) \
-        return; \
-      } \
-      else if(b1 >= chunk_tag::luma){ \
-        /*luma*/ \
-        const auto b2 = p.pull(); \
-        --size; \
-        QOIXX_HPP_WITH_TABLES( \
-        static constexpr auto table = create_luma_table(); \
-        const auto drb = table[b2]; \
-        ) \
-        static constexpr int vgv = chunk_tag::luma+40; \
-        const int vg = b1 - vgv; \
-        QOIXX_HPP_WITH_TABLES( \
-        px.r += vg + drb[0]; \
-        px.g += vg + 8; \
-        px.b += vg + drb[1]; \
-        hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size; \
-        ) QOIXX_HPP_WITHOUT_TABLES( \
-        px.r += vg + (b2 >> 4); \
-        px.g += vg + 8; \
-        px.b += vg + (b2 & mask_tail_4); \
-        ) \
-      } \
-      else{ \
-        /*diff*/ \
-        QOIXX_HPP_WITH_TABLES( \
-        static constexpr auto table = create_diff_table(); \
-        const auto drgb = table[b1];\
-        px.r += drgb[0]; \
-        px.g += drgb[1]; \
-        px.b += drgb[2]; \
-        hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size; \
-        ) QOIXX_HPP_WITHOUT_TABLES( \
-        px.r += ((b1 >> 4) & mask_tail_2) - 2; \
-        px.g += ((b1 >> 2) & mask_tail_2) - 2; \
-        px.b += ( b1       & mask_tail_2) - 2; \
-        ) \
-      }
-      if constexpr(Channels == 4)
-        QOIXX_HPP_DECODE_SWITCH(
-          case chunk_tag::rgba:
+      if(b1 >= chunk_tag::run){
+        if(b1 < chunk_tag::rgb){
+          /*run*/
+          std::size_t run = b1 & mask_tail_6;
+          if(run >= px_len)[[unlikely]]
+            run = px_len;
+          px_len -= run;
+          QOIXX_HPP_DECODE_RUN(px, run)
+          return;
+        }
+        if(b1 == chunk_tag::rgb){
+          pull<3>(&px, p);
+          size -= 3;
+          QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
+        }
+        if constexpr(Channels == 4){
+          if(b1 == chunk_tag::rgba){
             pull<4>(&px, p);
             size -= 4;
             QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
-            break;
-        )
-      else
-        QOIXX_HPP_DECODE_SWITCH(
-          [[unlikely]] case chunk_tag::rgba:
+          }
+        }
+        else{
+          if(b1 == chunk_tag::rgba)[[unlikely]]{
             pull<3>(&px, p);
             p.advance(1);
             size -= 4;
             QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
-            break;
+          }
+        }
+      }
+      else if(b1 < chunk_tag::diff){
+        /*index*/
+        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+          px = index[b1];
+        else
+          efficient_memcpy<Channels>(&px, index + b1);
+        push<Channels>(pixels, &px);
+        QOIXX_HPP_WITH_TABLES(hash = b1;)
+        return;
+      }
+      else if(b1 >= chunk_tag::luma){
+        /*luma*/
+        const auto b2 = p.pull();
+        --size;
+        QOIXX_HPP_WITH_TABLES(
+        static constexpr auto table = create_luma_table();
+        const auto drb = table[b2];
         )
-#undef QOIXX_HPP_DECODE_SWITCH
+        static constexpr int vgv = chunk_tag::luma+40;
+        const int vg = b1 - vgv;
+        QOIXX_HPP_WITH_TABLES(
+        px.r += vg + drb[0];
+        px.g += vg + 8;
+        px.b += vg + drb[1];
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size;
+        ) QOIXX_HPP_WITHOUT_TABLES(
+        px.r += vg + (b2 >> 4);
+        px.g += vg + 8;
+        px.b += vg + (b2 & mask_tail_4);
+        )
+      }
+      else{
+        /*diff*/
+        QOIXX_HPP_WITH_TABLES(
+        static constexpr auto table = create_diff_table();
+        const auto drgb = table[b1];\
+        px.r += drgb[0];
+        px.g += drgb[1];
+        px.b += drgb[2];
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size;
+        ) QOIXX_HPP_WITHOUT_TABLES(
+        px.r += ((b1 >> 4) & mask_tail_2) - 2;
+        px.g += ((b1 >> 2) & mask_tail_2) - 2;
+        px.b += ( b1       & mask_tail_2) - 2;
+        )
+      }
 #undef QOIXX_HPP_DECODE_RUN
       if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
         index[QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES(px.hash() % index_size)] = px;
