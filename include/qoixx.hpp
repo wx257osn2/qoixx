@@ -9,6 +9,8 @@
 #include<memory>
 #include<stdexcept>
 #include<bit>
+#include<numeric>
+#include<array>
 
 #ifndef QOIXX_NO_SIMD
 #if defined(__ARM_NEON)
@@ -88,7 +90,7 @@ requires(sizeof(T) == 1)
 struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
   using target_type = std::pair<std::unique_ptr<T[]>, std::size_t>;
   static inline target_type construct(std::size_t size){
-    return {typename target_type::first_type{static_cast<T*>(::operator new(size))}, 0};
+    return {typename target_type::first_type{static_cast<T*>(::operator new[](size))}, 0};
   }
   struct pusher{
     static constexpr bool is_contiguous = true;
@@ -873,6 +875,56 @@ class qoi{
     return d;
   }
 
+#ifndef QOIXX_DECODE_WITHOUT_TABLES
+  static constexpr std::size_t hash_table_offset = std::numeric_limits<std::uint8_t>::max()+1 - chunk_tag::diff;
+  static constexpr std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> create_hash_diff_table(){
+    std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> table;
+    for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
+      constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      const auto vr = (i >> 4);
+      const auto vb = (i & mask_tail_4);
+      table[i] = vr*3 + vb*7;
+    }
+    for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
+      constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto vr = ((i >> 4) & mask_tail_2) - 2;
+      const auto vg = ((i >> 2) & mask_tail_2) - 2;
+      const auto vb = ( i       & mask_tail_2) - 2;
+      table[i+hash_table_offset] = vr*3 + vg*5 + vb*7;
+    }
+    for(std::size_t i = chunk_tag::luma; i < chunk_tag::run; ++i){
+        constexpr int vgv = chunk_tag::luma+40;
+        const int vg = i - vgv;
+        table[i+hash_table_offset] = vg*3 + (vg+8)*5 + vg*7;
+    }
+    return table;
+  }
+  static constexpr std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> create_luma_table(){
+    std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> table;
+    for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
+      constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      const auto vr = (i >> 4);
+      const auto vb = (i & mask_tail_4);
+      table[i][0] = vr;
+      table[i][1] = vb;
+    }
+    return table;
+  }
+  static constexpr std::array<std::array<std::int8_t, 3>, chunk_tag::luma> create_diff_table(){
+    std::array<std::array<std::int8_t, 3>, chunk_tag::luma> table;
+    for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
+      constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      const auto vr = ((i >> 4) & mask_tail_2) - 2;
+      const auto vg = ((i >> 2) & mask_tail_2) - 2;
+      const auto vb = ( i       & mask_tail_2) - 2;
+      table[i][0] = vr;
+      table[i][1] = vg;
+      table[i][2] = vb;
+    }
+    return table;
+  }
+#endif
+
   template<std::size_t Channels, typename Pusher, typename Puller>
   static inline void decode_impl(Pusher& pixels, Puller& p, std::size_t px_len, std::size_t size){
 #ifndef __aarch64__
@@ -885,99 +937,149 @@ class qoi{
     if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
       index[(0*3+0*5+0*7+0*11)%index_size] = {};
 
-    const auto f = [&pixels, &p, &px_len, &size, &px, &index]{
+#ifndef QOIXX_DECODE_WITH_TABLES
+#define QOIXX_HPP_DECODE_WITH_TABLES_NOT_DEFINED
+#ifdef __aarch64__
+#define QOIXX_DECODE_WITH_TABLES 0
+#else
+#define QOIXX_DECODE_WITH_TABLES 1
+#endif
+#endif
+#if QOIXX_DECODE_WITH_TABLES
+#define QOIXX_HPP_WITH_TABLES(...) __VA_ARGS__
+#define QOIXX_HPP_WITHOUT_TABLES(...)
+#else
+#define QOIXX_HPP_WITH_TABLES(...)
+#define QOIXX_HPP_WITHOUT_TABLES(...) __VA_ARGS__
+#endif
+
+    QOIXX_HPP_WITH_TABLES(
+    auto hash = px.hash() % index_size;
+    static constexpr auto luma_hash_diff_table = create_hash_diff_table();
+    static constexpr auto hash_diff_table = luma_hash_diff_table.data() + hash_table_offset;
+    )
+
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)]{
       static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-      static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-      static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+      [[maybe_unused]] static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
+      [[maybe_unused]] static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
       const auto b1 = p.pull();
       --size;
 
 #if defined(__ARM_NEON) and not defined(QOIXX_NO_SIMD)
 #define QOIXX_HPP_DECODE_RUN(px, run) { \
-    ++run; \
-    if(run >= 8){\
-      std::conditional_t<Channels == 4, uint8x8x4_t, uint8x8x3_t> data = {vdup_n_u8(px.r), vdup_n_u8(px.g), vdup_n_u8(px.b)}; \
-      if constexpr(Channels == 4) \
-        data.val[3] = vdup_n_u8(px.a); \
-      while(run>=8){ \
+    if constexpr(Pusher::is_contiguous){ \
+      ++run; \
+      if(run >= 8){ \
+        std::conditional_t<Channels == 4, uint8x8x4_t, uint8x8x3_t> data = {vdup_n_u8(px.r), vdup_n_u8(px.g), vdup_n_u8(px.b)}; \
         if constexpr(Channels == 4) \
-          vst4_u8(pixels.raw_pointer(), data); \
-        else \
-          vst3_u8(pixels.raw_pointer(), data); \
-        pixels.advance(Channels*8); \
-        run -= 8; \
+          data.val[3] = vdup_n_u8(px.a); \
+        while(run>=8){ \
+          if constexpr(Channels == 4) \
+            vst4_u8(pixels.raw_pointer(), data); \
+          else \
+            vst3_u8(pixels.raw_pointer(), data); \
+          pixels.advance(Channels*8); \
+          run -= 8; \
+        } \
       } \
+      while(run--){push<Channels>(pixels, &px);} \
     } \
-    while(run--){push<Channels>(pixels, &px);} \
+    else \
+      do{push<Channels>(pixels, &px);}while(run--); \
   }
 #else
 #define QOIXX_HPP_DECODE_RUN(px, run) do{push<Channels>(pixels, &px);}while(run--);
 #endif
 
-#define QOIXX_HPP_DECODE_SWITCH(...) \
-      if(b1 >= chunk_tag::run){ \
-        switch(b1){ \
-          __VA_ARGS__ \
-         case chunk_tag::rgb: \
-          pull<3>(&px, p); \
-          size -= 3; \
-          break; \
-         default: \
-          /*run*/ \
-          std::size_t run = b1 & mask_tail_6; \
-          if(run >= px_len)[[unlikely]] \
-            run = px_len; \
-          px_len -= run; \
-          QOIXX_HPP_DECODE_RUN(px, run) \
-          return; \
-        } \
-      } \
-      else if(b1 >= chunk_tag::luma){ \
-        /*luma*/ \
-        const auto b2 = p.pull(); \
-        --size; \
-        static constexpr int vgv = chunk_tag::luma+40; \
-        const int vg = b1 - vgv; \
-        px.r += vg + (b2 >> 4); \
-        px.g += vg + 8; \
-        px.b += vg + (b2 & mask_tail_4); \
-      } \
-      else if(b1 >= chunk_tag::diff){ \
-        /*diff*/ \
-        px.r += ((b1 >> 4) & mask_tail_2) - 2; \
-        px.g += ((b1 >> 2) & mask_tail_2) - 2; \
-        px.b += ( b1       & mask_tail_2) - 2; \
-      } \
-      else{ \
-        /*index*/ \
-        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value) \
-          px = index[b1]; \
-        else \
-          efficient_memcpy<Channels>(&px, index + b1); \
-        push<Channels>(pixels, &px); \
-        return; \
-      }
-      if constexpr(Channels == 4)
-        QOIXX_HPP_DECODE_SWITCH(
-          case chunk_tag::rgba:
+      if(b1 >= chunk_tag::run){
+        if(b1 < chunk_tag::rgb){
+          /*run*/
+          std::size_t run = b1 & mask_tail_6;
+          if(run >= px_len)[[unlikely]]
+            run = px_len;
+          px_len -= run;
+          QOIXX_HPP_DECODE_RUN(px, run)
+          return;
+        }
+        if(b1 == chunk_tag::rgb){
+          pull<3>(&px, p);
+          size -= 3;
+          QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
+        }
+        if constexpr(Channels == 4){
+          if(b1 == chunk_tag::rgba){
             pull<4>(&px, p);
             size -= 4;
-            break;
-        )
-      else
-        QOIXX_HPP_DECODE_SWITCH(
-          [[unlikely]] case chunk_tag::rgba:
+            QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
+          }
+        }
+        else{
+          if(b1 == chunk_tag::rgba)[[unlikely]]{
             pull<3>(&px, p);
             p.advance(1);
             size -= 4;
-            break;
+            QOIXX_HPP_WITH_TABLES(hash = px.hash() % index_size;)
+          }
+        }
+      }
+      else if(b1 < chunk_tag::diff){
+        /*index*/
+        if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+          px = index[b1];
+        else
+          efficient_memcpy<Channels>(&px, index + b1);
+        push<Channels>(pixels, &px);
+        QOIXX_HPP_WITH_TABLES(hash = b1;)
+        return;
+      }
+      else if(b1 >= chunk_tag::luma){
+        /*luma*/
+        const auto b2 = p.pull();
+        --size;
+        QOIXX_HPP_WITH_TABLES(
+        static constexpr auto table = create_luma_table();
+        const auto drb = table[b2];
         )
-#undef QOIXX_HPP_DECODE_SWITCH
+        static constexpr int vgv = chunk_tag::luma+40;
+        const int vg = b1 - vgv;
+        QOIXX_HPP_WITH_TABLES(
+        px.r += vg + drb[0];
+        px.g += vg + 8;
+        px.b += vg + drb[1];
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size;
+        ) QOIXX_HPP_WITHOUT_TABLES(
+        px.r += vg + (b2 >> 4);
+        px.g += vg + 8;
+        px.b += vg + (b2 & mask_tail_4);
+        )
+      }
+      else{
+        /*diff*/
+        QOIXX_HPP_WITH_TABLES(
+        static constexpr auto table = create_diff_table();
+        const auto drgb = table[b1];\
+        px.r += drgb[0];
+        px.g += drgb[1];
+        px.b += drgb[2];
+        hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size;
+        ) QOIXX_HPP_WITHOUT_TABLES(
+        px.r += ((b1 >> 4) & mask_tail_2) - 2;
+        px.g += ((b1 >> 2) & mask_tail_2) - 2;
+        px.b += ( b1       & mask_tail_2) - 2;
+        )
+      }
 #undef QOIXX_HPP_DECODE_RUN
       if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
-        index[px.hash() % index_size] = px;
+        index[QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES(px.hash() % index_size)] = px;
       else
-        efficient_memcpy<Channels>(index + px.hash() % index_size, &px);
+        efficient_memcpy<Channels>(index + QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES(px.hash() % index_size), &px);
+#undef QOIXX_HPP_WITHOUT_TABLES
+#undef QOIXX_HPP_WITH_TABLES
+#ifdef QOIXX_HPP_DECODE_WITH_TABLES_NOT_DEFINED
+#undef QOIXX_DECODE_WITH_TABLES
+#undef QOIXX_HPP_DECODE_WITH_TABLES_NOT_DEFINED
+#endif
 
       push<Channels>(pixels, &px);
     };

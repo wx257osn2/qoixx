@@ -177,7 +177,7 @@ static inline benchmark_result_t benchmark_image(const std::filesystem::path& p,
   const std::size_t raw_size = static_cast<std::size_t>(w) * qoixx_desc.height * qoixx_desc.channels;
 
   const auto pixels = std::unique_ptr<::stbi_uc[], decltype(&::stbi_image_free)>{::stbi_load(p.string().c_str(), &w, &h, nullptr, channels), &::stbi_image_free};
-  const auto encoded_qoixx = qoixx::qoi::encode<std::vector<std::uint8_t>>(pixels.get(), raw_size, qoixx_desc);
+  const auto encoded_qoixx = qoixx::qoi::encode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(pixels.get(), raw_size, qoixx_desc);
 
   if(!pixels)
     throw std::runtime_error("Error decoding " + p.string());
@@ -192,7 +192,7 @@ static inline benchmark_result_t benchmark_image(const std::filesystem::path& p,
     }
     {// qoixx.encode -> qoi.decode == pixels
       ::qoi_desc dc;
-      const auto pixs = std::unique_ptr<std::uint8_t[], decltype(&::free)>{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.data(), static_cast<int>(encoded_qoixx.size()), &dc, channels)), &::free};
+      const auto pixs = std::unique_ptr<std::uint8_t[], decltype(&::free)>{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.first.get(), static_cast<int>(encoded_qoixx.second), &dc, channels)), &::free};
       if(dc.width != qoixx_desc.width || dc.height != qoixx_desc.height || dc.channels != qoixx_desc.channels || dc.colorspace != static_cast<unsigned char>(qoixx_desc.colorspace) || std::memcmp(pixels.get(), pixs.get(), dc.width*dc.height*dc.channels) != 0)
         throw std::runtime_error("QOIxx encoder pixel mismatch for " + p.string());
     }
@@ -208,7 +208,7 @@ static inline benchmark_result_t benchmark_image(const std::filesystem::path& p,
     if(opt.reference)
       BENCHMARK(opt, result.qoi.decode_time,
         ::qoi_desc dc;
-        const std::unique_ptr<std::uint8_t[], decltype(&::free)> pixs{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.data(), static_cast<int>(encoded_qoixx.size()), &dc, channels)), &::free};
+        const std::unique_ptr<std::uint8_t[], decltype(&::free)> pixs{static_cast<std::uint8_t*>(::qoi_decode(encoded_qoixx.first.get(), static_cast<int>(encoded_qoixx.second), &dc, channels)), &::free};
       );
     BENCHMARK(opt, result.qoixx.decode_time,
       const auto [pixs, desc] = qoixx::qoi::decode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(encoded_qoixx);

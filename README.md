@@ -10,13 +10,18 @@ qoixx has the features below:
 - MIT licensed
 - no dependencies, except for the standard library and architecture-specific headers included with the common compilers
 - extremely fast implementation
-    - encoder: SIMD-based implementation, one of the fastest implementation
+    - encoder: SIMD-based implementation, one of the fastest QOI encoder
         - On x86_64, qoixx uses AVX2 if available
         - On ARMv8, qoixx uses ARM SIMD(NEON) if available
         - If not available, qoixx encoder runs without SIMD instructions (but the scalar implementation is still faster than the [original implementation](https://github.com/phoboslab/qoi))
         - When you don't want to use SIMD implementation or want to break the dependency to architecture-specific headers, you can use `QOIXX_NO_SIMD` macro. `QOIXX_NO_SIMD` forces qoixx encoder to use the scalar implementation.
     - decoder: Optimized scalar implementation, averagely fast
         - With some input, [original implementation](https://github.com/phoboslab/qoi) is faster
+        - If the macro `QOIXX_DECODE_WITH_TABLES` is not 0, the decoder uses precalculated tables
+            - In default, `QOIXX_DECODE_WITH_TABLES` is
+                - `0` in aarch64
+                - `1` in other envirnoment like x86
+            - The default `QOIXX_DECODE_WITH_TABLES` value can be overridden.
 
 ## Performance
 
@@ -24,25 +29,33 @@ qoixx has the features below:
 # Grand total for qoi benchmark suite, 20 iterations
 #   https://qoiformat.org/benchmark/qoi_benchmark_suite.tar
         decode ms   encode ms   decode mpps   encode mpps   size kb    rate
-## Intel Core i9-10900
-qoi:       2.2226      2.5331       208.843       183.247       463   28.2%
-qoixx:     1.3753      1.5134       337.518       306.706       463   28.2%
+## Intel Core i9-10900, Linux 5.11.0, g++ 11.1.0
+qoi:       2.2389      2.5434       207.326       182.504       463   28.2%
+qoixx:     1.3477      1.5255       344.431       304.280       463   28.2%
 
-## AMD Ryzen7 2700X
-qoi:       2.1826      2.7039       212.673       171.671       463   28.2%
-qoixx:     1.6523      1.5448       280.928       300.470       463   28.2%
+## AMD Ryzen7 2700X, Linux 5.4.0, g++ 11.0.0 20200622 (experimental)
+qoi:       2.1203      2.7231       218.924       170.457       463   28.2%
+qoixx:     1.4759      1.5711       314.504       295.444       463   28.2%
 
-## AMD Ryzen9 3950X
-qoi:       2.2756      2.5869       203.978       179.435       463   28.2%
-qoixx:     1.5453      1.5821       300.381       293.402       463   28.2%
+## AMD Ryzen7 3800X, Linux 5.4.0, g++ 12.0.0 20211219 (experimental)
+qoi:       1.9747      2.5249       235.057       183.843       463   28.2%
+qoixx:     1.4431      1.4380       321.643       322.785       463   28.2%
 
-## Qualcomm Kyro 585
-qoi:       2.5395      2.7791       182.785       167.027       463   28.2%
-qoixx:     1.7685      1.8228       262.473       254.648       463   28.2%
+## AMD Ryzen9 3950X, Windows + MSYS2 ucrt64, g++ 11.2.0
+qoi:       2.1692      2.5216       213.988       184.083       463   28.2%
+qoixx:     1.3778      1.5473       336.891       299.991       463   28.2%
 
-## Apple M1 Max
-qoi:       1.7461      2.1248       265.840       218.461       463   28.2%
-qoixx:     1.1440      1.4430       405.750       321.683       463   28.2%
+## AWS Graviton3, Linux 5.15.0, g++ 11.2.0
+qoi:       1.9813      2.9072       234.281       159.662       463   28.2%
+qoixx:     1.4390      1.8452       322.568       251.560       463   28.2%
+
+## Qualcomm Kyro 585, Linux 4.19.125, g++ 11.1.0
+qoi:       2.5313      2.7970       183.376       165.957       463   28.2%
+qoixx:     1.6611      1.8253       279.444       254.306       463   28.2%
+
+## Apple M1 Max, Mac, g++ 11.2.0
+qoi:       1.7911      2.1635       259.155       214.545       463   28.2%
+qoixx:     1.1020      1.4696       421.211       315.848       463   28.2%
 ```
 
 ## License
