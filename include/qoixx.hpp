@@ -875,7 +875,16 @@ class qoi{
     return d;
   }
 
-#ifndef QOIXX_DECODE_WITHOUT_TABLES
+#ifndef QOIXX_DECODE_WITH_TABLES
+#define QOIXX_HPP_DECODE_WITH_TABLES_NOT_DEFINED
+#ifdef __aarch64__
+#define QOIXX_DECODE_WITH_TABLES 0
+#else
+#define QOIXX_DECODE_WITH_TABLES 1
+#endif
+#endif
+
+#if QOIXX_DECODE_WITH_TABLES
   static constexpr std::size_t hash_table_offset = std::numeric_limits<std::uint8_t>::max()+1 - chunk_tag::diff;
   static constexpr std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> create_hash_diff_table(){
     std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> table;
@@ -937,14 +946,6 @@ class qoi{
     if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
       index[(0*3+0*5+0*7+0*11)%index_size] = {};
 
-#ifndef QOIXX_DECODE_WITH_TABLES
-#define QOIXX_HPP_DECODE_WITH_TABLES_NOT_DEFINED
-#ifdef __aarch64__
-#define QOIXX_DECODE_WITH_TABLES 0
-#else
-#define QOIXX_DECODE_WITH_TABLES 1
-#endif
-#endif
 #if QOIXX_DECODE_WITH_TABLES
 #define QOIXX_HPP_WITH_TABLES(...) __VA_ARGS__
 #define QOIXX_HPP_WITHOUT_TABLES(...)
