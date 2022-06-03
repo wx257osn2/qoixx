@@ -397,7 +397,8 @@ class qoi{
       }
     }
   }
-#if defined(__ARM_NEON) and not defined(QOIXX_NO_SIMD)
+#ifndef QOIXX_NO_SIMD
+#if defined(__ARM_NEON)
   template<bool Alpha>
   using pixels_type = std::conditional_t<Alpha, uint8x16x4_t, uint8x16x3_t>;
   template<bool Alpha>
@@ -562,7 +563,7 @@ class qoi{
 
     push<sizeof(padding)>(p_, padding);
   }
-#elif defined(__AVX2__) and not defined(QOIXX_NO_SIMD)
+#elif defined(__AVX2__)
   static constexpr unsigned de_bruijn_bit_position_sequence[32] = {
     0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8, 31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
   };
@@ -840,6 +841,7 @@ class qoi{
 
     push<sizeof(padding)>(p_, padding);
   }
+#endif
 #endif
 
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
