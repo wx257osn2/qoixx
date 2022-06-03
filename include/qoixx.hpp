@@ -412,12 +412,6 @@ class qoi{
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
   static inline void encode_neon(Pusher& p_, Puller& pixels_, const desc& desc){
     static constexpr bool Alpha = Channels == 4;
-    write_32(p_, magic);
-    write_32(p_, desc.width);
-    write_32(p_, desc.height);
-    p_.push(Channels);
-    p_.push(static_cast<std::uint8_t>(desc.colorspace));
-
     std::uint8_t* p = p_.raw_pointer();
     const std::uint8_t* pixels = pixels_.raw_pointer();
 
@@ -691,12 +685,6 @@ class qoi{
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
   static inline void encode_avx2(Pusher& p_, Puller& pixels_, const desc& desc){
     static constexpr bool Alpha = Channels == 4;
-    write_32(p_, magic);
-    write_32(p_, desc.width);
-    write_32(p_, desc.height);
-    p_.push(Channels);
-    p_.push(static_cast<std::uint8_t>(desc.colorspace));
-
     std::uint8_t* p = p_.raw_pointer();
     const std::uint8_t* pixels = pixels_.raw_pointer();
 
@@ -846,12 +834,6 @@ class qoi{
 
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
   static inline void encode_impl(Pusher& p, Puller& pixels, const desc& desc){
-    write_32(p, magic);
-    write_32(p, desc.width);
-    write_32(p, desc.height);
-    p.push(Channels);
-    p.push(static_cast<std::uint8_t>(desc.colorspace));
-
     rgba_t index[index_size] = {};
 
     std::size_t px_len = desc.width * desc.height;
@@ -1106,6 +1088,12 @@ class qoi{
     T data = coT::construct(max_size);
     auto p = coT::create_pusher(data);
     auto puller = coU::create_puller(u);
+
+    write_32(p, magic);
+    write_32(p, desc.width);
+    write_32(p, desc.height);
+    p.push(desc.channels);
+    p.push(static_cast<std::uint8_t>(desc.colorspace));
 
 #ifndef QOIXX_NO_SIMD
 #if defined(__ARM_NEON)
