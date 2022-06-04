@@ -13,7 +13,10 @@
 #include<array>
 
 #ifndef QOIXX_NO_SIMD
-#if defined(__ARM_NEON)
+#if defined(__ARM_FEATURE_SVE)
+#include<arm_sve.h>
+#include<arm_neon.h>
+#elif defined(__ARM_NEON)
 #include<arm_neon.h>
 #elif defined(__AVX2__)
 #include<immintrin.h>
@@ -398,7 +401,186 @@ class qoi{
     }
   }
 #ifndef QOIXX_NO_SIMD
-#if defined(__ARM_NEON)
+#if defined(__ARM_FEATURE_SVE)
+  template<bool Alpha>
+  using pixels_type = std::conditional_t<Alpha, svuint8x4_t, svuint8x3_t>;
+  template<typename... Args>
+  requires (std::same_as<std::decay_t<Args>, svuint8_t> && ...)
+  static inline pixels_type<sizeof...(Args) == 4> create(Args&&... args)noexcept{
+    if constexpr(sizeof...(Args) == 4)
+      return svcreate4_u8(std::forward<Args>(args)...);
+    else
+      return svcreate3_u8(std::forward<Args>(args)...);
+  }
+  template<std::size_t ImmIndex>
+  static inline svuint8_t get(svuint8x4_t t)noexcept{
+    return svget4_u8(t, ImmIndex);
+  }
+  template<std::size_t ImmIndex>
+  static inline svuint8_t get(svuint8x3_t t)noexcept{
+    return svget3_u8(t, ImmIndex);
+  }
+  template<bool Alpha>
+  static inline pixels_type<Alpha> load(svbool_t pg, const std::uint8_t* ptr)noexcept{
+    if constexpr(Alpha)
+      return svld4_u8(pg, ptr);
+    else
+      return svld3_u8(pg, ptr);
+  }
+  template<std::size_t SVERegisterSize, std::uint_fast8_t Channels, typename Pusher, typename Puller>
+  static inline void encode_sve(Pusher& p_, Puller& pixels_, const desc& desc){
+    static constexpr bool Alpha = Channels == 4;
+    std::uint8_t* p = p_.raw_pointer();
+    const std::uint8_t* pixels = pixels_.raw_pointer();
+
+    rgba_t index[index_size] = {};
+
+    const auto zero = svdup_n_u8(0);
+    const auto iota = svindex_u8(0, 1);
+
+    pixels_type<Alpha> prev;
+    if constexpr(Alpha)
+      prev = create(zero, zero, zero, svdup_n_u8(255));
+    else
+      prev = create(zero, zero, zero);
+
+    std::size_t run = 0;
+    rgba_t px = {0, 0, 0, 255};
+    auto prev_hash = static_cast<std::uint8_t>(index_size);
+
+    const std::size_t px_len = desc.width * desc.height;
+    static constexpr auto vector_lanes = SVERegisterSize/8;
+    for(std::size_t i = 0; i < px_len; i += vector_lanes){
+      const auto mask = svwhilelt_b8_u64(i, px_len);
+      const auto num = std::min(px_len-i, vector_lanes);
+      const auto pxs = load<Alpha>(mask, pixels);
+      static constexpr std::uint64_t imm = SVERegisterSize/8-1;
+      auto rv = svsub_u8_x(mask, get<0>(pxs), svext_u8(get<0>(prev), get<0>(pxs), imm));
+      auto gv = svsub_u8_x(mask, get<1>(pxs), svext_u8(get<1>(prev), get<1>(pxs), imm));
+      auto bv = svsub_u8_x(mask, get<2>(pxs), svext_u8(get<2>(prev), get<2>(pxs), imm));
+      [[maybe_unused]] svbool_t av;
+      bool alpha = true;
+      if constexpr(Alpha){
+        av = svcmpeq_n_u8(mask, svsub_u8_x(mask, get<3>(pxs), svext_u8(get<3>(prev), get<3>(pxs), imm)), 0);
+        alpha = !svptest_any(mask, svnot_b_z(mask, av));
+      }
+      auto runv = svcmpeq_n_u8(mask, svorr_u8_x(mask, svorr_u8_x(mask, rv, gv), bv), 0);
+      if constexpr(Alpha)
+        runv = svand_b_z(mask, runv, av);
+      const auto not_runv = svnot_b_z(mask, runv);
+      if(!svptest_any(mask, not_runv)){
+        run += num;
+        pixels += num*Channels;
+        continue;
+      }
+      const auto r = svminv_u8(not_runv, iota);
+      run += r;
+      pixels += r*Channels;
+      if(run > 0){
+        while(run >= 62)[[unlikely]]{
+          static constexpr std::uint8_t x = chunk_tag::run | 61;
+          *p++ = x;
+          run -= 62;
+        }
+        if(run > 1){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
+      }
+      rv = svadd_n_u8_x(mask, rv, 2);
+      gv = svadd_n_u8_x(mask, gv, 2);
+      bv = svadd_n_u8_x(mask, bv, 2);
+      const auto diffv = svorr_u8_z(svcmplt_n_u8(mask, svorr_u8_z(mask, svorr_u8_x(mask, rv, gv), bv), 4), svorr_n_u8_x(mask, svlsl_n_u8_x(mask, rv, 4), chunk_tag::diff), svorr_u8_x(mask, svlsl_n_u8_x(mask, gv, 2), bv));
+      rv = svadd_n_u8_x(mask, svsub_u8_x(mask, rv, gv), 8);
+      bv = svadd_n_u8_x(mask, svsub_u8_x(mask, bv, gv), 8);
+      gv = svadd_n_u8_x(mask, gv, 30);
+      const auto lu = svorr_n_u8_z(svcmpeq_n_u8(mask, svorr_u8_x(mask, svand_n_u8_x(mask, svorr_u8_x(mask, rv, bv), 0xf0), svand_n_u8_x(mask, gv, 0xc0)), 0), gv, chunk_tag::luma);
+      const auto ma = svorr_u8_x(mask, svlsl_n_u8_x(mask, rv, 4), bv);
+      svuint8_t hash;
+      if constexpr(Alpha)
+        hash = svand_n_u8_x(mask, svadd_u8_x(mask, svadd_u8_x(mask, svmul_n_u8_x(mask, get<0>(pxs), 3), svmul_n_u8_x(mask, get<1>(pxs), 5)), svadd_u8_x(mask, svmul_n_u8_x(mask, get<2>(pxs), 7), svmul_n_u8_x(mask, get<3>(pxs), 11))), 63);
+      else
+        hash = svand_n_u8_x(mask, svadd_u8_x(mask, svadd_u8_x(mask, svmul_n_u8_x(mask, get<0>(pxs), 3), svmul_n_u8_x(mask, get<1>(pxs), 5)), svadd_n_u8_x(mask, svmul_n_u8_x(mask, get<2>(pxs), 7), static_cast<std::uint8_t>(255*11))), 63);
+      std::uint8_t runs[SVERegisterSize/8], diffs[SVERegisterSize/8], lus[SVERegisterSize/8], mas[SVERegisterSize/8], hashs[SVERegisterSize/8];
+      [[maybe_unused]] std::uint8_t alphas[SVERegisterSize/8];
+      svst1_u8(mask, runs, svadd_n_u8_m(runv, zero, 1));
+      svst1_u8(mask, diffs, diffv);
+      svst1_u8(mask, lus, lu);
+      svst1_u8(mask, mas, ma);
+      svst1_u8(mask, hashs, hash);
+      if constexpr(Alpha)
+        if(!alpha)
+          svst1_u8(mask, alphas, svadd_n_u8_m(av, zero, 1));
+      for(std::size_t i = r; i < num; ++i){
+        if(runs[i]){
+          ++run;
+          pixels += Channels;
+          continue;
+        }
+        if(run > 1){
+          *p++ = chunk_tag::run | (run-1);
+          run = 0;
+        }
+        else if(run == 1){
+          if(prev_hash == index_size)[[unlikely]]
+            *p++ = chunk_tag::run;
+          else
+            *p++ = chunk_tag::index | prev_hash;
+          run = 0;
+        }
+        const auto index_pos = hashs[i];
+        prev_hash = index_pos;
+        efficient_memcpy<Channels>(&px, pixels);
+        pixels += Channels;
+        if(index[index_pos] == px){
+          *p++ = chunk_tag::index | index_pos;
+          continue;
+        }
+        index[index_pos] = px;
+
+        if constexpr(Alpha)
+          if(!alpha && !alphas[i]){
+            *p++ = chunk_tag::rgba;
+            std::memcpy(p, &px, 4);
+            p += 4;
+            continue;
+          }
+        if(diffs[i])
+          *p++ = diffs[i];
+        else if(lus[i]){
+          *p++ = lus[i];
+          *p++ = mas[i];
+        }
+        else{
+          *p++ = chunk_tag::rgb;
+          efficient_memcpy<3>(p, &px);
+          p += 3;
+        }
+      }
+      prev = pxs;
+    }
+    while(run >= 62)[[unlikely]]{
+      static constexpr std::uint8_t x = chunk_tag::run | 61;
+      *p++ = x;
+      run -= 62;
+    }
+    if(run > 0){
+      *p++ = chunk_tag::run | (run-1);
+      run = 0;
+    }
+    p_.advance(p-p_.raw_pointer());
+    pixels_.advance(px_len*Channels);
+
+    push<sizeof(padding)>(p_, padding);
+  }
+#elif defined(__ARM_NEON)
   template<bool Alpha>
   using pixels_type = std::conditional_t<Alpha, uint8x16x4_t, uint8x16x3_t>;
   template<bool Alpha>
@@ -1096,7 +1278,39 @@ class qoi{
     p.push(static_cast<std::uint8_t>(desc.colorspace));
 
 #ifndef QOIXX_NO_SIMD
-#if defined(__ARM_NEON)
+#if defined(__ARM_FEATURE_SVE)
+    if constexpr(coT::pusher::is_contiguous && coU::puller::is_contiguous)
+      if(desc.channels == 4)
+#define QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH \
+        switch(svcntb()){ \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(128); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(256); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(384); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(512); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(640); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(768); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(896); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1024); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1152); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1280); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1408); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1536); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1664); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1792); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(1920); \
+          QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(2048); \
+          default: while(true){/*unreachable*/} \
+        }
+#define QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(i) case i/8: encode_sve<i, 4>(p, puller, desc); break
+        QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH
+#undef QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE
+      else
+#define QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE(i) case i/8: encode_sve<i, 3>(p, puller, desc); break;
+        QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH
+#undef QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH_CASE
+#undef QOIXX_HPP_SVE_REGISTER_SIZE_SWITCH
+    else
+#elif defined(__ARM_NEON)
     if constexpr(coT::pusher::is_contiguous && coU::puller::is_contiguous)
       if(desc.channels == 4)
         encode_neon<4>(p, puller, desc);
