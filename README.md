@@ -12,7 +12,9 @@ qoixx has the features below:
 - extremely fast implementation
     - encoder: SIMD-based implementation, one of the fastest QOI encoder
         - On x86_64, qoixx uses AVX2 if available
-        - On ARMv8, qoixx uses ARM SIMD(NEON) if available
+        - On ARMv8 or later, qoixx uses
+            - SVE if available
+            - ARM SIMD(NEON) if SVE is not available
         - If not available, qoixx encoder runs without SIMD instructions (but the scalar implementation is still faster than the [original implementation](https://github.com/phoboslab/qoi))
         - When you don't want to use SIMD implementation or want to break the dependency to architecture-specific headers, you can use `QOIXX_NO_SIMD` macro. `QOIXX_NO_SIMD` forces qoixx encoder to use the scalar implementation.
     - decoder: Optimized scalar implementation, averagely fast
@@ -46,8 +48,8 @@ qoi:       2.1692      2.5216       213.988       184.083       463   28.2%
 qoixx:     1.3778      1.5473       336.891       299.991       463   28.2%
 
 ## AWS Graviton3, Linux 5.15.0, g++ 11.2.0
-qoi:       1.9813      2.9072       234.281       159.662       463   28.2%
-qoixx:     1.4390      1.8452       322.568       251.560       463   28.2%
+qoi:       1.9845      2.9169       233.897       159.134       463   28.2%
+qoixx:     1.4420      1.7450       321.902       265.999       463   28.2%
 
 ## Qualcomm Kyro 585, Linux 4.19.125, g++ 11.1.0
 qoi:       2.5313      2.7970       183.376       165.957       463   28.2%
