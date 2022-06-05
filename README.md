@@ -2,6 +2,8 @@
 
 qoixx is a high performance MIT licensed single-header [QOI](https://github.com/phoboslab/qoi) implementation written in C++20.
 
+[![Ubuntu](https://github.com/wx257osn2/qoixx/actions/workflows/linux.yml/badge.svg)](https://github.com/wx257osn2/qoixx/actions/workflows/linux.yml) [![Windows(msys2)](https://github.com/wx257osn2/qoixx/actions/workflows/windows.yml/badge.svg)](https://github.com/wx257osn2/qoixx/actions/workflows/windows.yml)
+
 ## Features
 
 qoixx has the features below:
