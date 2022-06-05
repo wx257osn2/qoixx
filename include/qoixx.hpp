@@ -1053,7 +1053,7 @@ class qoi{
 #if QOIXX_DECODE_WITH_TABLES
   static constexpr std::size_t hash_table_offset = std::numeric_limits<std::uint8_t>::max()+1 - chunk_tag::diff;
   static constexpr std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> create_hash_diff_table(){
-    std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> table;
+    std::array<int, std::numeric_limits<std::uint8_t>::max()+1+chunk_tag::run-chunk_tag::diff> table = {};
     for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
       constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       const auto vr = (i >> 4);
@@ -1075,7 +1075,7 @@ class qoi{
     return table;
   }
   static constexpr std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> create_luma_table(){
-    std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> table;
+    std::array<std::array<std::uint8_t, 2>, std::numeric_limits<std::uint8_t>::max()+1> table = {};
     for(std::size_t i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i){
       constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       const auto vr = (i >> 4);
@@ -1086,7 +1086,7 @@ class qoi{
     return table;
   }
   static constexpr std::array<std::array<std::int8_t, 3>, chunk_tag::luma> create_diff_table(){
-    std::array<std::array<std::int8_t, 3>, chunk_tag::luma> table;
+    std::array<std::array<std::int8_t, 3>, chunk_tag::luma> table = {};
     for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
       constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
       const auto vr = ((i >> 4) & mask_tail_2) - 2;
