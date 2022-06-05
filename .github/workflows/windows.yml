@@ -1,4 +1,4 @@
-name: CI on Windows
+name: Windows(msys2)
 
 on:
   push:
