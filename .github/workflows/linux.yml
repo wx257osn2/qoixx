@@ -13,12 +13,12 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: recursive
-    - uses: actions/cache@v2
+    - uses: actions/cache@v3
       with:
         path: images
         key: key
     - id: cached
-      uses: andstor/file-existence-action@v1
+      uses: andstor/file-existence-action@v2
       with:
         files: images
     - name: get benchmark suite
