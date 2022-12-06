@@ -2,6 +2,22 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+template<typename T, typename U>
+static bool equals(const T& t, const U& u){
+  const auto t_size = qoixx::container_operator<T>::size(t);
+  {
+    const auto u_size = qoixx::container_operator<U>::size(u);
+    if(t_size != u_size)
+      return false;
+  }
+  auto t_puller = qoixx::container_operator<T>::create_puller(t);
+  auto u_puller = qoixx::container_operator<U>::create_puller(u);
+  for(std::size_t i = 0; i < t_size; ++i)
+    if(t_puller.pull() != u_puller.pull())
+      return false;
+  return true;
+}
+
 TEST_CASE("3-channel image"){
   constexpr qoixx::qoi::desc d{
     .width = 8,
@@ -34,10 +50,40 @@ TEST_CASE("3-channel image"){
     const auto actual = qoixx::qoi::encode<std::vector<std::uint8_t>>(image, d);
     CHECK(actual == expected);
   }
+  SUBCASE("encode std::vector<std::uint8_t>, output as std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>"){
+    const auto actual = qoixx::qoi::encode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(image, d);
+    CHECK(equals(actual, expected));
+  }
+  SUBCASE("encode std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>, output as std::vector<std::uint8_t>"){
+    auto ptr = std::make_unique<std::uint8_t[]>(image.size());
+    std::ranges::copy(image, ptr.get());
+    const auto actual = qoixx::qoi::encode<std::vector<std::uint8_t>>(std::make_pair(std::move(ptr), image.size()), d);
+    CHECK(equals(actual, expected));
+  }
+  SUBCASE("encode std::uint8_t*, output as std::vector<std::byte>"){
+    const auto actual = qoixx::qoi::encode<std::vector<std::byte>>(image.data(), image.size(), d);
+    CHECK(equals(actual, expected));
+  }
   SUBCASE("decode std::vector<std::uint8_t>, output as std::vector<std::uint8_t>"){
     const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(expected);
     CHECK(d == desc);
     CHECK(actual == image);
+  }
+  SUBCASE("decode std::vector<std::uint8_t>, output as std::pair<std::unique_ptr<std::uint8_t[], std::size_t>>"){
+    const auto [actual, desc] = qoixx::qoi::decode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(expected);
+    CHECK(d == desc);
+    CHECK(equals(actual, image));
+  }
+  SUBCASE("decode std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>, output as std::vector<std::uint8_t>"){
+    auto ptr = std::make_unique<std::uint8_t[]>(expected.size());
+    std::ranges::copy(expected, ptr.get());
+    const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(std::make_pair(std::move(ptr), expected.size()));
+    CHECK(d == desc);
+    CHECK(equals(actual, image));
+  }
+  SUBCASE("decode std::uint8_t*, output as std::vector<std::byte>"){
+    const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::byte>>(expected.data(), expected.size());
+    CHECK(equals(actual, image));
   }
 }
 
@@ -77,9 +123,39 @@ TEST_CASE("4-channel image"){
     const auto actual = qoixx::qoi::encode<std::vector<std::uint8_t>>(image, d);
     CHECK(actual == expected);
   }
+  SUBCASE("encode std::vector<std::uint8_t>, output as std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>"){
+    const auto actual = qoixx::qoi::encode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(image, d);
+    CHECK(equals(actual, expected));
+  }
+  SUBCASE("encode std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>, output as std::vector<std::uint8_t>"){
+    auto ptr = std::make_unique<std::uint8_t[]>(image.size());
+    std::ranges::copy(image, ptr.get());
+    const auto actual = qoixx::qoi::encode<std::vector<std::uint8_t>>(std::make_pair(std::move(ptr), image.size()), d);
+    CHECK(equals(actual, expected));
+  }
+  SUBCASE("encode std::uint8_t*, output as std::vector<std::byte>"){
+    const auto actual = qoixx::qoi::encode<std::vector<std::byte>>(image.data(), image.size(), d);
+    CHECK(equals(actual, expected));
+  }
   SUBCASE("decode std::vector<std::uint8_t>, output as std::vector<std::uint8_t>"){
     const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(expected);
     CHECK(d == desc);
     CHECK(actual == image);
+  }
+  SUBCASE("decode std::vector<std::uint8_t>, output as std::pair<std::unique_ptr<std::uint8_t[], std::size_t>>"){
+    const auto [actual, desc] = qoixx::qoi::decode<std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>>(expected);
+    CHECK(d == desc);
+    CHECK(equals(actual, image));
+  }
+  SUBCASE("decode std::pair<std::unique_ptr<std::uint8_t[]>, std::size_t>, output as std::vector<std::uint8_t>"){
+    auto ptr = std::make_unique<std::uint8_t[]>(expected.size());
+    std::ranges::copy(expected, ptr.get());
+    const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::uint8_t>>(std::make_pair(std::move(ptr), expected.size()));
+    CHECK(d == desc);
+    CHECK(equals(actual, image));
+  }
+  SUBCASE("decode std::uint8_t*, output as std::vector<std::byte>"){
+    const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::byte>>(expected.data(), expected.size());
+    CHECK(equals(actual, image));
   }
 }
