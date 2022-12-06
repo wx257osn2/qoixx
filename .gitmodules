@@ -4,3 +4,6 @@
 [submodule ".dependencies/qoi"]
 	path = .dependencies/qoi
 	url = https://github.com/phoboslab/qoi
+[submodule ".dependencies/doctest"]
+	path = .dependencies/doctest
+	url = https://github.com/doctest/doctest
