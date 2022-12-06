@@ -31,3 +31,6 @@ jobs:
     - name: run
       shell: bash
       run: bin/qoibench 1 images --noreference --nowarmup
+    - name: test
+      shell: bash
+      run: bin/test
