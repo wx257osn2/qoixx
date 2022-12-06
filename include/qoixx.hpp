@@ -28,6 +28,22 @@ namespace qoixx{
 namespace detail{
 
 template<typename T>
+requires(sizeof(T) == 1 && !std::same_as<T, bool>)
+struct contiguous_puller{
+  static constexpr bool is_contiguous = true;
+  const T* t;
+  inline std::uint8_t pull()noexcept{
+    return static_cast<std::uint8_t>(*t++);
+  }
+  inline const std::uint8_t* raw_pointer()noexcept{
+    return reinterpret_cast<const std::uint8_t*>(t);
+  }
+  inline void advance(std::size_t n)noexcept{
+    t += n;
+  }
+};
+
+template<typename T>
 struct default_container_operator;
 
 template<typename T, typename A>
@@ -64,19 +80,7 @@ struct default_container_operator<std::vector<T, A>>{
   static constexpr pusher create_pusher(target_type& t)noexcept{
     return {&t};
   }
-  struct puller{
-    static constexpr bool is_contiguous = true;
-    const T* t;
-    inline std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(*t++);
-    }
-    inline const std::uint8_t* raw_pointer()noexcept{
-      return reinterpret_cast<const std::uint8_t*>(t);
-    }
-    inline void advance(std::size_t n)noexcept{
-      t += n;
-    }
-  };
+  using puller = contiguous_puller<T>;
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.data()};
   }
@@ -119,19 +123,7 @@ struct default_container_operator<std::pair<std::unique_ptr<T[]>, std::size_t>>{
   static constexpr pusher create_pusher(target_type& t)noexcept{
     return {&t};
   }
-  struct puller{
-    static constexpr bool is_contiguous = true;
-    const T* t;
-    inline std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(*t++);
-    }
-    inline const std::uint8_t* raw_pointer()noexcept{
-      return reinterpret_cast<const std::uint8_t*>(t);
-    }
-    inline void advance(std::size_t n)noexcept{
-      t += n;
-    }
-  };
+  using puller = contiguous_puller<T>;
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.first.get()};
   }
@@ -147,19 +139,7 @@ template<typename T>
 requires(sizeof(T) == 1)
 struct default_container_operator<std::pair<T*, std::size_t>>{
   using target_type = std::pair<T*, std::size_t>;
-  struct puller{
-    static constexpr bool is_contiguous = true;
-    const T* ptr;
-    inline std::uint8_t pull()noexcept{
-      return static_cast<std::uint8_t>(*ptr++);
-    }
-    inline const std::uint8_t* raw_pointer()noexcept{
-      return reinterpret_cast<const std::uint8_t*>(ptr);
-    }
-    inline void advance(std::size_t n)noexcept{
-      ptr += n;
-    }
-  };
+  using puller = contiguous_puller<T>;
   static constexpr puller create_puller(const target_type& t)noexcept{
     return {t.first};
   }
