@@ -1060,8 +1060,8 @@ class qoi{
       constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       const auto vr = (i >> 4);
       const auto vb = (i & mask_tail_4);
-      table[i][0] = vr;
-      table[i][1] = vb;
+      table[i][0] = static_cast<uint8_t>(vr);
+      table[i][1] = static_cast<uint8_t>(vb);
     }
     return table;
   }
@@ -1072,9 +1072,9 @@ class qoi{
       const auto vr = ((i >> 4) & mask_tail_2) - 2;
       const auto vg = ((i >> 2) & mask_tail_2) - 2;
       const auto vb = ( i       & mask_tail_2) - 2;
-      table[i][0] = vr;
-      table[i][1] = vg;
-      table[i][2] = vb;
+      table[i][0] = static_cast<uint8_t>(vr);
+      table[i][1] = static_cast<uint8_t>(vg);
+      table[i][2] = static_cast<uint8_t>(vb);
     }
     return table;
   }
