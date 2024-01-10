@@ -1205,7 +1205,7 @@ class qoi{
         /*diff*/
         QOIXX_HPP_WITH_TABLES(
         static constexpr auto table = create_diff_table();
-        const auto drgb = table[b1];\
+        const auto drgb = table[b1];
         px.r += drgb[0];
         px.g += drgb[1];
         px.b += drgb[2];
