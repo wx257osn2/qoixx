@@ -304,10 +304,13 @@ class qoi{
  private:
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
   static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::uint8_t prev_hash = static_cast<std::uint8_t>(index_size), std::size_t run = 0){
-    const auto f = [&run, &index, &p, &prev_hash](rgba_t px, rgba_t px_prev){
+    auto px = px_prev;
+    while(px_len--)[[likely]]{
+      px_prev = px;
+      pull<Channels>(&px, pixels);
       if(px == px_prev){
         ++run;
-        return;
+        continue;
       }
       if(run > 0){
         while(run >= 62)[[unlikely]]{
@@ -333,7 +336,7 @@ class qoi{
 
       if(index[index_pos] == px){
         p.push(chunk_tag::index | index_pos);
-        return;
+        continue;
       }
       index[index_pos] = px;
 
@@ -341,7 +344,7 @@ class qoi{
         if(px.a != px_prev.a){
           p.push(chunk_tag::rgba);
           push<4>(p, &px);
-          return;
+          continue;
         }
       const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
       const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
@@ -349,7 +352,7 @@ class qoi{
 
       if(const std::uint8_t v = vr|vg|vb; v < 4){
         p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
-        return;
+        continue;
       }
       const auto vg_r = vr - vg + 8;
       const auto vg_b = vb - vg + 8;
@@ -361,12 +364,6 @@ class qoi{
         p.push(chunk_tag::rgb);
         push<3>(p, &px);
       }
-    };
-    auto px = px_prev;
-    while(px_len--)[[likely]]{
-      px_prev = px;
-      pull<Channels>(&px, pixels);
-      f(px, px_prev);
     }
     if(px == px_prev){
       while(run >= 62)[[unlikely]]{
