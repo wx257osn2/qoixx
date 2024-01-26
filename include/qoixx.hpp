@@ -306,7 +306,6 @@ class qoi{
   static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::uint8_t prev_hash = static_cast<std::uint8_t>(index_size), std::size_t run = 0){
     auto px = px_prev;
     while(px_len--)[[likely]]{
-      px_prev = px;
       pull<Channels>(&px, pixels);
       if(px == px_prev){
         ++run;
@@ -334,47 +333,48 @@ class qoi{
       const auto index_pos = px.hash() % index_size;
       prev_hash = index_pos;
 
-      if(index[index_pos] == px){
-        p.push(chunk_tag::index | index_pos);
-        continue;
-      }
-      index[index_pos] = px;
-
-      if constexpr(Channels == 4)
-        if(px.a != px_prev.a){
-          p.push(chunk_tag::rgba);
-          push<4>(p, &px);
-          continue;
+      do{
+        if(index[index_pos] == px){
+          p.push(chunk_tag::index | index_pos);
+          break;
         }
-      const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
-      const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
-      const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
+        index[index_pos] = px;
 
-      if(const std::uint8_t v = vr|vg|vb; v < 4){
-        p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
-        continue;
-      }
-      const auto vg_r = vr - vg + 8;
-      const auto vg_b = vb - vg + 8;
-      if(const int v = vg_r|vg_b, g = vg+30; ((v&0xf0)|(g&0xc0)) == 0){
-        p.push(chunk_tag::luma | g);
-        p.push(vg_r << 4 | vg_b);
-      }
-      else{
-        p.push(chunk_tag::rgb);
-        push<3>(p, &px);
-      }
+        if constexpr(Channels == 4)
+          if(px.a != px_prev.a){
+            p.push(chunk_tag::rgba);
+            push<4>(p, &px);
+            break;
+          }
+        const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
+        const auto vg = static_cast<int>(px.g) - static_cast<int>(px_prev.g) + 2;
+        const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
+
+        if(const std::uint8_t v = vr|vg|vb; v < 4){
+          p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
+          break;
+        }
+        const auto vg_r = vr - vg + 8;
+        const auto vg_b = vb - vg + 8;
+        if(const int v = vg_r|vg_b, g = vg+30; ((v&0xf0)|(g&0xc0)) == 0){
+          p.push(chunk_tag::luma | g);
+          p.push(vg_r << 4 | vg_b);
+        }
+        else{
+          p.push(chunk_tag::rgb);
+          push<3>(p, &px);
+        }
+      }while(false);
+      px_prev = px;
     }
-    if(px == px_prev){
-      while(run >= 62)[[unlikely]]{
-        static constexpr std::uint8_t x = chunk_tag::run | 61;
-        p.push(x);
-        run -= 62;
-      }
-      if(run > 0){
-        p.push(chunk_tag::run | (run-1));
-        run = 0;
-      }
+    while(run >= 62)[[unlikely]]{
+      static constexpr std::uint8_t x = chunk_tag::run | 61;
+      p.push(x);
+      run -= 62;
+    }
+    if(run > 0){
+      p.push(chunk_tag::run | (run-1));
+      run = 0;
     }
   }
 #ifndef QOIXX_NO_SIMD
