@@ -248,6 +248,19 @@ class qoi{
   };
   struct rgb_t{
     std::uint8_t r, g, b;
+    inline std::uint32_t v()const{
+      static_assert(sizeof(rgb_t) == 3u);
+      if constexpr(std::endian::native == std::endian::little){
+        std::uint32_t x = 255u << 24u;
+        efficient_memcpy<3>(&x, this);
+        return x;
+      }
+      else
+        return std::uint32_t{r}       |
+               std::uint32_t{g} <<  8 |
+               std::uint32_t{b} << 16 |
+                           255u << 24;
+    }
     inline std::uint_fast32_t hash()const{
       static constexpr std::uint64_t constant =
         static_cast<std::uint64_t>(3u) << 56 |
@@ -302,12 +315,27 @@ class qoi{
     }
   }
  private:
+  template<bool Alpha>
+  using local_rgba_pixel_t = std::conditional_t<Alpha, rgba_t, rgb_t>;
+  template<bool Alpha>
+  static constexpr local_rgba_pixel_t<Alpha> default_pixel()noexcept{
+    if constexpr(Alpha)
+      return {0, 0, 0, 255};
+    else
+      return {};
+  }
+  template<bool Alpha>
+  struct local_pixel{
+    std::uint8_t rgb = static_cast<std::uint8_t>(chunk_tag::rgb);
+    local_rgba_pixel_t<Alpha> v;
+  };
+  static_assert(std::has_unique_object_representations_v<local_pixel<true>> and std::has_unique_object_representations_v<local_pixel<false>>);
   template<std::uint_fast8_t Channels, typename Pusher, typename Puller>
-  static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, rgba_t px_prev = {0, 0, 0, 255}, std::uint8_t prev_hash = static_cast<std::uint8_t>(index_size), std::size_t run = 0){
-    auto px = px_prev;
+  static inline void encode_body(Pusher& p, Puller& pixels, rgba_t (&index)[index_size], std::size_t px_len, local_rgba_pixel_t<Channels == 4u> px_prev = default_pixel<Channels == 4u>(), std::uint8_t prev_hash = static_cast<std::uint8_t>(index_size), std::size_t run = 0){
+    local_pixel<Channels == 4u> px;
     while(px_len--)[[likely]]{
-      pull<Channels>(&px, pixels);
-      if(px == px_prev){
+      pull<Channels>(&px.v, pixels);
+      if(px.v.v() == px_prev.v()){
         ++run;
         continue;
       }
@@ -330,27 +358,29 @@ class qoi{
         }
       }
 
-      const auto index_pos = px.hash() % index_size;
+      const auto index_pos = px.v.hash() % index_size;
       prev_hash = index_pos;
 
       do{
-        if(index[index_pos] == px){
+        if(index[index_pos].v() == px.v.v()){
           p.push(chunk_tag::index | index_pos);
           break;
         }
-        index[index_pos] = px;
+        efficient_memcpy<Channels>(index + index_pos, &px.v);
+        if constexpr(Channels == 3)
+          index[index_pos].a = 255u;
 
         if constexpr(Channels == 4)
-          if(px.a != px_prev.a){
+          if(px.v.a != px_prev.a){
             p.push(chunk_tag::rgba);
-            push<4>(p, &px);
+            push<4>(p, &px.v);
             break;
           }
-        const auto vg_2 = static_cast<int>(px.g) - static_cast<int>(px_prev.g);
+        const auto vg_2 = static_cast<int>(px.v.g) - static_cast<int>(px_prev.g);
         if(const std::uint8_t g = vg_2+32; g < 64){
-          const auto vr = static_cast<int>(px.r) - static_cast<int>(px_prev.r) + 2;
+          const auto vr = static_cast<int>(px.v.r) - static_cast<int>(px_prev.r) + 2;
           const auto vg = vg_2 + 2;
-          const auto vb = static_cast<int>(px.b) - static_cast<int>(px_prev.b) + 2;
+          const auto vb = static_cast<int>(px.v.b) - static_cast<int>(px_prev.b) + 2;
 
           if(static_cast<std::uint8_t>(vr|vg|vb) < 4){
             p.push(chunk_tag::diff | vr << 4 | vg << 2 | vb);
@@ -361,13 +391,14 @@ class qoi{
           if(static_cast<std::uint8_t>(vg_r|vg_b) < 16){
             p.push(chunk_tag::luma | g);
             p.push(vg_r << 4 | vg_b);
-            break;
           }
+          else
+            push<4>(p, &px);
         }
-        p.push(chunk_tag::rgb);
-        push<3>(p, &px);
+        else
+          push<4>(p, &px);
       }while(false);
-      px_prev = px;
+      efficient_memcpy<Channels>(&px_prev, &px.v);
     }
     while(run >= 62)[[unlikely]]{
       static constexpr std::uint8_t x = chunk_tag::run | 61;
@@ -712,7 +743,13 @@ class qoi{
     }
     p_.advance(p-p_.raw_pointer());
 
-    encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
+    if constexpr(Alpha)
+      encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
+    else{
+      rgb_t px_prev;
+      efficient_memcpy<3>(&px_prev, &px);
+      encode_body<Channels>(p_, pixels_, index, px_len, px_prev, prev_hash, run);
+    }
 
     push<sizeof(padding)>(p_, padding);
   }
@@ -984,7 +1021,13 @@ class qoi{
     }
     p_.advance(p-p_.raw_pointer());
 
-    encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
+    if constexpr(Alpha)
+      encode_body<Channels>(p_, pixels_, index, px_len, px, prev_hash, run);
+    else{
+      rgb_t px_prev;
+      efficient_memcpy<3>(&px_prev, &px);
+      encode_body<Channels>(p_, pixels_, index, px_len, px_prev, prev_hash, run);
+    }
 
     push<sizeof(padding)>(p_, padding);
   }
