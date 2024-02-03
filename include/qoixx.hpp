@@ -372,10 +372,8 @@ class qoi{
       p.push(x);
       run -= 62;
     }
-    if(run > 0){
+    if(run > 0)
       p.push(chunk_tag::run | (run-1));
-      run = 0;
-    }
   }
 #ifndef QOIXX_NO_SIMD
 #if defined(__ARM_FEATURE_SVE)
