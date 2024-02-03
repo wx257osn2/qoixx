@@ -516,12 +516,12 @@ class qoi{
         hash = svand_n_u8_x(mask, svadd_u8_x(mask, svadd_u8_x(mask, svmul_n_u8_x(mask, get<0>(pxs), 3), svmul_n_u8_x(mask, get<1>(pxs), 5)), svadd_u8_x(mask, svmul_n_u8_x(mask, get<2>(pxs), 7), svmul_n_u8_x(mask, get<3>(pxs), 11))), 63);
       else
         hash = svand_n_u8_x(mask, svadd_u8_x(mask, svadd_u8_x(mask, svmul_n_u8_x(mask, get<0>(pxs), 3), svmul_n_u8_x(mask, get<1>(pxs), 5)), svadd_n_u8_x(mask, svmul_n_u8_x(mask, get<2>(pxs), 7), static_cast<std::uint8_t>(255*11))), 63);
-      std::uint8_t runs[SVERegisterSize/8], diffs[SVERegisterSize/8], lus[SVERegisterSize/8], mas[SVERegisterSize/8], hashs[SVERegisterSize/8];
+      std::uint8_t runs[SVERegisterSize/8], diffs[SVERegisterSize/8], lumas[SVERegisterSize/8*2], hashs[SVERegisterSize/8];
       [[maybe_unused]] std::uint8_t alphas[SVERegisterSize/8];
       svst1_u8(mask, runs, svadd_n_u8_m(runv, zero, 1));
       svst1_u8(mask, diffs, diffv);
-      svst1_u8(mask, lus, lu);
-      svst1_u8(mask, mas, ma);
+      const auto luma = svcreate2_u8(lu, ma);
+      svst2_u8(mask, lumas, luma);
       svst1_u8(mask, hashs, hash);
       if constexpr(Alpha)
         if(!alpha)
@@ -562,9 +562,9 @@ class qoi{
           }
         if(diffs[i])
           *p++ = diffs[i];
-        else if(lus[i]){
-          *p++ = lus[i];
-          *p++ = mas[i];
+        else if(lumas[i*2]){
+          std::memcpy(p, lumas + i*2, 2);
+          p += 2;
         }
         else{
           *p++ = chunk_tag::rgb;
@@ -683,12 +683,11 @@ class qoi{
         hash = vandq_u8(vaddq_u8(vaddq_u8(vmulq_u8(pxs.val[0], vdupq_n_u8(3)), vmulq_u8(pxs.val[1], vdupq_n_u8(5))), vaddq_u8(vmulq_u8(pxs.val[2], vdupq_n_u8(7)), vmulq_u8(pxs.val[3], vdupq_n_u8(11)))), vdupq_n_u8(63));
       else
         hash = vandq_u8(vaddq_u8(vaddq_u8(vmulq_u8(pxs.val[0], vdupq_n_u8(3)), vmulq_u8(pxs.val[1], vdupq_n_u8(5))), vaddq_u8(vmulq_u8(pxs.val[2], vdupq_n_u8(7)), vdupq_n_u8(static_cast<std::uint8_t>(255*11)))), vdupq_n_u8(63));
-      std::uint8_t runs[simd_lanes], diffs[simd_lanes], lus[simd_lanes], mas[simd_lanes], hashs[simd_lanes];
+      std::uint8_t runs[simd_lanes], diffs[simd_lanes], lumas[simd_lanes*2], hashs[simd_lanes];
       [[maybe_unused]] std::uint8_t alphas[simd_lanes];
       vst1q_u8(runs, runv);
       vst1q_u8(diffs, diffv);
-      vst1q_u8(lus, lu);
-      vst1q_u8(mas, ma);
+      vst2q_u8(lumas, (uint8x16x2_t{lu, ma}));
       vst1q_u8(hashs, hash);
       if constexpr(Alpha)
         if(!alpha)
@@ -729,9 +728,9 @@ class qoi{
           }
         if(diffs[i])
           *p++ = diffs[i];
-        else if(lus[i]){
-          *p++ = lus[i];
-          *p++ = mas[i];
+        else if(lumas[i*2]){
+          std::memcpy(p, lumas + i*2, 2);
+          p += 2;
         }
         else{
           *p++ = chunk_tag::rgb;
@@ -954,19 +953,20 @@ class qoi{
       diff.val[0] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[0], diff.val[1]), eight);
       diff.val[2] = _mm256_add_epi8(_mm256_sub_epi8(diff.val[2], diff.val[1]), eight);
       diff.val[1] = _mm256_add_epi8(diff.val[1], _mm256_set1_epi8(30));
-      const auto lu = _mm256_and_si256(_mm256_or_si256(_mm256_set1_epi8(static_cast<char>(chunk_tag::luma)), diff.val[1]), _mm256_cmpeq_epi8(_mm256_or_si256(_mm256_and_si256(_mm256_or_si256(diff.val[0], diff.val[2]), _mm256_set1_epi8(static_cast<char>(0xf0))), _mm256_and_si256(diff.val[1], _mm256_set1_epi8(static_cast<char>(0xc0)))), zero));
-      const auto ma = _mm256_or_si256(slli_epi8<4>(diff.val[0]), diff.val[2]);
+      const auto luma_mask = _mm256_setr_epi32(0, 1, 4, 5, 2, 3, 6, 7);
+      const auto lu = _mm256_permutevar8x32_epi32(_mm256_and_si256(_mm256_or_si256(_mm256_set1_epi8(static_cast<char>(chunk_tag::luma)), diff.val[1]), _mm256_cmpeq_epi8(_mm256_or_si256(_mm256_and_si256(_mm256_or_si256(diff.val[0], diff.val[2]), _mm256_set1_epi8(static_cast<char>(0xf0))), _mm256_and_si256(diff.val[1], _mm256_set1_epi8(static_cast<char>(0xc0)))), zero)), luma_mask);
+      const auto ma = _mm256_permutevar8x32_epi32(_mm256_or_si256(slli_epi8<4>(diff.val[0]), diff.val[2]), luma_mask);
       __m256i hash;
       if constexpr(Alpha)
         hash = _mm256_and_si256(_mm256_add_epi8(_mm256_add_epi8(mul_epi8<3>(pxs.val[0]), mul_epi8<5>(pxs.val[1])), _mm256_add_epi8(mul_epi8<7>(pxs.val[2]), mul_epi8<11>(pxs.val[3]))), _mm256_set1_epi8(63));
       else
         hash = _mm256_and_si256(_mm256_add_epi8(_mm256_add_epi8(mul_epi8<3>(pxs.val[0]), mul_epi8<5>(pxs.val[1])), _mm256_add_epi8(mul_epi8<7>(pxs.val[2]), _mm256_set1_epi8(static_cast<std::uint8_t>(255*11)))), _mm256_set1_epi8(63));
-      alignas(alignof(__m256i)) std::uint8_t runs[simd_lanes], diffs[simd_lanes], lus[simd_lanes], mas[simd_lanes], hashs[simd_lanes];
+      alignas(alignof(__m256i)) std::uint8_t runs[simd_lanes], diffs[simd_lanes], lumas[simd_lanes*2], hashs[simd_lanes];
       [[maybe_unused]] alignas(alignof(__m256i)) std::uint8_t alphas[simd_lanes];
       _mm256_store_si256(reinterpret_cast<__m256i*>(runs), runv);
       _mm256_store_si256(reinterpret_cast<__m256i*>(diffs), diffv);
-      _mm256_store_si256(reinterpret_cast<__m256i*>(lus), lu);
-      _mm256_store_si256(reinterpret_cast<__m256i*>(mas), ma);
+      _mm256_store_si256(reinterpret_cast<__m256i*>(lumas), _mm256_unpacklo_epi8(lu, ma));
+      _mm256_store_si256(reinterpret_cast<__m256i*>(lumas)+1, _mm256_unpackhi_epi8(lu, ma));
       _mm256_store_si256(reinterpret_cast<__m256i*>(hashs), hash);
       if constexpr(Alpha)
         if(!alpha)
@@ -1007,9 +1007,9 @@ class qoi{
           }
         if(diffs[i])
           *p++ = diffs[i];
-        else if(lus[i]){
-          *p++ = lus[i];
-          *p++ = mas[i];
+        else if(lumas[i*2]){
+          std::memcpy(p, lumas + i*2, 2);
+          p += 2;
         }
         else{
           *p++ = chunk_tag::rgb;
