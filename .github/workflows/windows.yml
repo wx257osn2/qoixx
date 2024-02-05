@@ -18,7 +18,7 @@ jobs:
           git
           curl
           mingw-w64-ucrt-x86_64-make
-          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-clang
     - uses: actions/checkout@v4
       with:
         submodules: recursive
@@ -36,7 +36,7 @@ jobs:
       run: curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
     - name: build
       shell: msys2 {0}
-      run: mingw32-make -j
+      run: CXX=clang++ mingw32-make -j
     - name: run
       shell: msys2 {0}
       run: bin/qoibench 1 images --noreference --nowarmup
