@@ -19,15 +19,15 @@ jobs:
           curl
           mingw-w64-ucrt-x86_64-make
           mingw-w64-ucrt-x86_64-gcc
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       with:
         path: images
         key: key
     - id: cached
-      uses: andstor/file-existence-action@v2
+      uses: andstor/file-existence-action@v3
       with:
         files: images
     - name: get benchmark suite

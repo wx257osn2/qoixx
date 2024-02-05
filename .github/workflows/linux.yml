@@ -10,15 +10,15 @@ jobs:
   ci-ubuntu:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       with:
         path: images
         key: key
     - id: cached
-      uses: andstor/file-existence-action@v2
+      uses: andstor/file-existence-action@v3
       with:
         files: images
     - name: get benchmark suite
