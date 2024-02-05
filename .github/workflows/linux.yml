@@ -10,15 +10,24 @@ jobs:
   ci-ubuntu:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2
+    - name: install clang
+      shell: bash
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main" >> ./llvm.list
+        echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main" >> ./llvm.list
+        sudo mv llvm.list /etc/apt/sources.list.d
+        sudo apt update -y
+        sudo apt install clang-17 -y
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       with:
         path: images
         key: key
     - id: cached
-      uses: andstor/file-existence-action@v2
+      uses: andstor/file-existence-action@v3
       with:
         files: images
     - name: get benchmark suite
@@ -27,7 +36,7 @@ jobs:
       run: curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
     - name: build
       shell: bash
-      run: make -j
+      run: CXX=clang++-17 make -j
     - name: run
       shell: bash
       run: bin/qoibench 1 images --noreference --nowarmup

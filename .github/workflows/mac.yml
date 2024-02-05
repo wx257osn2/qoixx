@@ -1,4 +1,4 @@
-name: Windows(msys2)
+name: M1 Mac
 
 on:
   push:
@@ -7,18 +7,12 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
-    runs-on: windows-2022
+  ci-mac:
+    runs-on: macos-14
     steps:
-    - uses: msys2/setup-msys2@v2
-      with:
-        update: true
-        msystem: ucrt64
-        install: >-
-          git
-          curl
-          mingw-w64-ucrt-x86_64-make
-          mingw-w64-ucrt-x86_64-clang
+    - name: install clang
+      shell: bash
+      run: brew install llvm@17
     - uses: actions/checkout@v4
       with:
         submodules: recursive
@@ -35,11 +29,11 @@ jobs:
       shell: bash
       run: curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
     - name: build
-      shell: msys2 {0}
-      run: CXX=clang++ mingw32-make -j
+      shell: bash
+      run: CXX=$(brew --prefix llvm@17)/bin/clang++ make -j
     - name: run
-      shell: msys2 {0}
+      shell: bash
       run: bin/qoibench 1 images --noreference --nowarmup
     - name: test
-      shell: msys2 {0}
+      shell: bash
       run: bin/test
