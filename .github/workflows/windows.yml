@@ -17,6 +17,8 @@ jobs:
         install: >-
           git
           curl
+          unzip
+          diffutils
           mingw-w64-ucrt-x86_64-make
           mingw-w64-ucrt-x86_64-clang
     - uses: actions/checkout@v4
@@ -29,11 +31,24 @@ jobs:
     - id: cached
       uses: andstor/file-existence-action@v3
       with:
-        files: images
-    - name: get benchmark suite
+        files: "images, qoi_test_images"
+    - name: get test/benchmark suite
       if: steps.cached.outputs.files_exists == 'false'
-      shell: bash
-      run: curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
+      shell: msys2 {0}
+      run: |
+        curl -O https://qoiformat.org/qoi_test_images.zip
+        unzip qoi_test_images.zip
+        rm qoi_test_images.zip
+        curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
+    - name: build reference qoiconv
+      shell: msys2 {0}
+      run: |
+        pushd .dependencies/qoi
+        ln -s ../stb/stb_image.h .
+        ln -s ../stb/stb_image_write.h .
+        mingw32-make conv
+        popd
+        mv .dependencies/qoi/qoiconv.exe bin/qoiconv_orig.exe
     - name: build
       shell: msys2 {0}
       run: CXX=clang++ mingw32-make -j
@@ -42,4 +57,25 @@ jobs:
       run: bin/qoibench 1 images --noreference --nowarmup
     - name: test
       shell: msys2 {0}
-      run: bin/test
+      run: |
+        pushd qoi_test_images
+        mkdir -p /tmp/qoixx
+        mkdir -p /tmp/qoi
+        for i in ./*.qoi; do
+          # test decode
+          ../bin/qoiconv ${i} /tmp/qoixx/${i%.*}.png
+          ../bin/qoiconv_orig ${i} /tmp/qoi/${i%.*}.png
+          diff /tmp/qoi{,xx}/${i%.*}.png
+        done
+        rm -rf /tmp/qoixx/*.png
+        rm -rf /tmp/qoi/*.png
+        for i in ./*.png; do
+          # test encode
+          ../bin/qoiconv ${i} /tmp/qoixx/${i%.*}.qoi
+          ../bin/qoiconv_orig /tmp/qoixx/${i%.*}.qoi /tmp/qoixx/${i}
+          ../bin/qoiconv_orig ${i} /tmp/qoi/${i%.*}.qoi
+          ../bin/qoiconv_orig /tmp/qoi/${i%.*}.qoi /tmp/qoi/${i}
+          diff /tmp/qoi{,xx}/${i}
+        done
+        popd
+        bin/test
