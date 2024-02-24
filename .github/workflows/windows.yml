@@ -52,9 +52,6 @@ jobs:
     - name: build
       shell: msys2 {0}
       run: CXX=clang++ mingw32-make -j
-    - name: run
-      shell: msys2 {0}
-      run: bin/qoibench 1 images --noreference --nowarmup
     - name: test
       shell: msys2 {0}
       run: |
@@ -79,3 +76,6 @@ jobs:
         done
         popd
         bin/test
+    - name: run
+      shell: msys2 {0}
+      run: bin/qoibench 1 images --noreference --nowarmup

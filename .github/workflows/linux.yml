@@ -50,9 +50,6 @@ jobs:
     - name: build
       shell: bash
       run: CXX=clang++-17 make -j
-    - name: run
-      shell: bash
-      run: bin/qoibench 1 images --noreference --nowarmup
     - name: test
       shell: bash
       run: |
@@ -77,3 +74,6 @@ jobs:
         done
         popd
         bin/test
+    - name: run
+      shell: bash
+      run: bin/qoibench 1 images --noreference --nowarmup
