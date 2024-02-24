@@ -35,13 +35,13 @@
 
 static inline std::vector<std::byte> load_file(const std::filesystem::path& path){
   std::vector<std::byte> bytes(std::filesystem::file_size(path));
-  std::ifstream ifs{path};
+  std::ifstream ifs{path, std::ios::binary};
   ifs.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
   return bytes;
 }
 
 static inline void save_file(const std::filesystem::path& path, const std::vector<std::byte>& bytes){
-  std::ofstream ofs{path};
+  std::ofstream ofs{path, std::ios::binary};
   ofs.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
