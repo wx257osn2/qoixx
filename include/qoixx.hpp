@@ -1079,19 +1079,19 @@ class qoi{
       constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       const auto vr = (i >> 4);
       const auto vb = (i & mask_tail_4);
-      table[i] = vr*3 + vb*7;
+      table[i] = (vr*3 + vb*7) % index_size;
     }
     for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
       constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
-      const auto vr = ((i >> 4) & mask_tail_2) - 2;
-      const auto vg = ((i >> 2) & mask_tail_2) - 2;
-      const auto vb = ( i       & mask_tail_2) - 2;
-      table[i+hash_table_offset] = vr*3 + vg*5 + vb*7;
+      const auto vr = static_cast<int>((i >> 4) & mask_tail_2) - 2;
+      const auto vg = static_cast<int>((i >> 2) & mask_tail_2) - 2;
+      const auto vb = static_cast<int>( i       & mask_tail_2) - 2;
+      table[i+hash_table_offset] = static_cast<std::uint8_t>((vr*3 + vg*5 + vb*7) % index_size);
     }
     for(std::size_t i = chunk_tag::luma; i < chunk_tag::run; ++i){
         constexpr int vgv = chunk_tag::luma+40;
         const int vg = i - vgv;
-        table[i+hash_table_offset] = vg*3 + (vg+8)*5 + vg*7;
+        table[i+hash_table_offset] = static_cast<std::uint8_t>((vg*3 + (vg+8)*5 + vg*7) % index_size);
     }
     return table;
   }
