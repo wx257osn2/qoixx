@@ -1148,9 +1148,6 @@ class qoi{
     )
 
     const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)](bool first){
-      static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-      [[maybe_unused]] static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-      [[maybe_unused]] static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
       const auto b1 = p.pull();
       --size;
 
@@ -1183,6 +1180,7 @@ class qoi{
       if(b1 >= chunk_tag::run){
         if(b1 < chunk_tag::rgb){
           /*run*/
+          static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
           std::size_t run = b1 & mask_tail_6;
           if(run >= px_len)[[unlikely]]
             run = px_len;
@@ -1244,6 +1242,7 @@ class qoi{
         px.b += vg + drb[1];
         hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size;
         ) QOIXX_HPP_WITHOUT_TABLES(
+        static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
         px.r += vg + (b2 >> 4);
         px.g += vg + 8;
         px.b += vg + (b2 & mask_tail_4);
@@ -1259,6 +1258,7 @@ class qoi{
         px.b += drgb[2];
         hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size;
         ) QOIXX_HPP_WITHOUT_TABLES(
+        static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
         px.r += ((b1 >> 4) & mask_tail_2) - 2;
         px.g += ((b1 >> 2) & mask_tail_2) - 2;
         px.b += ( b1       & mask_tail_2) - 2;
