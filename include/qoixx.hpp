@@ -1130,8 +1130,12 @@ class qoi{
     if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
       px.a = 255;
     rgba_t index[index_size];
-    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value){
       index[(0*3+0*5+0*7+0*11)%index_size] = {};
+      index[(0*3+0*5+0*7+255*11)%index_size] = px;
+    }
+    else
+      index[(0*3+0*5+0*7+255*11)%index_size] = {};
 
 #if QOIXX_DECODE_WITH_TABLES
 #define QOIXX_HPP_WITH_TABLES(...) __VA_ARGS__
@@ -1147,7 +1151,7 @@ class qoi{
     static constexpr auto hash_diff_table = luma_hash_diff_table.data() + hash_table_offset;
     )
 
-    const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)](bool first){
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)]{
       const auto b1 = p.pull();
       --size;
 
@@ -1186,13 +1190,6 @@ class qoi{
             run = px_len;
           px_len -= run;
           QOIXX_HPP_DECODE_RUN(px, run)
-          if(first)[[unlikely]]{
-            QOIXX_HPP_WITH_TABLES(hash = (0*3+0*5+0*7+255*11) % index_size;)
-            if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
-              index[QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES((0*3+0*5+0*7+255*11) % index_size)] = px;
-            else
-              efficient_memcpy<Channels>(index + QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES((0*3+0*5+0*7+255*11) % index_size), &px);
-          }
           return;
         }
         if(b1 == chunk_tag::rgb){
@@ -1279,9 +1276,8 @@ class qoi{
       push<Channels>(pixels, &px);
     };
 
-    bool first = true;
     while(px_len--)[[likely]]{
-      f(std::exchange(first, false));
+      f();
       if(size < sizeof(padding))[[unlikely]]{
         throw std::runtime_error("qoixx::qoi::decode: insufficient input data");
       }
