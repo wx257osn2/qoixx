@@ -1079,19 +1079,19 @@ class qoi{
       constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
       const auto vr = (i >> 4);
       const auto vb = (i & mask_tail_4);
-      table[i] = vr*3 + vb*7;
+      table[i] = (vr*3 + vb*7) % index_size;
     }
     for(std::size_t i = chunk_tag::diff; i < chunk_tag::luma; ++i){
       constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
-      const auto vr = ((i >> 4) & mask_tail_2) - 2;
-      const auto vg = ((i >> 2) & mask_tail_2) - 2;
-      const auto vb = ( i       & mask_tail_2) - 2;
-      table[i+hash_table_offset] = vr*3 + vg*5 + vb*7;
+      const auto vr = static_cast<int>((i >> 4) & mask_tail_2) - 2;
+      const auto vg = static_cast<int>((i >> 2) & mask_tail_2) - 2;
+      const auto vb = static_cast<int>( i       & mask_tail_2) - 2;
+      table[i+hash_table_offset] = static_cast<std::uint8_t>((vr*3 + vg*5 + vb*7) % index_size);
     }
     for(std::size_t i = chunk_tag::luma; i < chunk_tag::run; ++i){
         constexpr int vgv = chunk_tag::luma+40;
         const int vg = i - vgv;
-        table[i+hash_table_offset] = vg*3 + (vg+8)*5 + vg*7;
+        table[i+hash_table_offset] = static_cast<std::uint8_t>((vg*3 + (vg+8)*5 + vg*7) % index_size);
     }
     return table;
   }
@@ -1130,8 +1130,12 @@ class qoi{
     if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
       px.a = 255;
     rgba_t index[index_size];
-    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
+    if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value){
       index[(0*3+0*5+0*7+0*11)%index_size] = {};
+      index[(0*3+0*5+0*7+255*11)%index_size] = px;
+    }
+    else
+      index[(0*3+0*5+0*7+255*11)%index_size] = {};
 
 #if QOIXX_DECODE_WITH_TABLES
 #define QOIXX_HPP_WITH_TABLES(...) __VA_ARGS__
@@ -1147,10 +1151,7 @@ class qoi{
     static constexpr auto hash_diff_table = luma_hash_diff_table.data() + hash_table_offset;
     )
 
-    const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)](bool first){
-      static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
-      [[maybe_unused]] static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
-      [[maybe_unused]] static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
+    const auto f = [&pixels, &p, &px_len, &size, &px, &index QOIXX_HPP_WITH_TABLES(, &hash)]{
       const auto b1 = p.pull();
       --size;
 
@@ -1183,18 +1184,12 @@ class qoi{
       if(b1 >= chunk_tag::run){
         if(b1 < chunk_tag::rgb){
           /*run*/
+          static constexpr std::uint32_t mask_tail_6 = 0b0011'1111u;
           std::size_t run = b1 & mask_tail_6;
           if(run >= px_len)[[unlikely]]
             run = px_len;
           px_len -= run;
           QOIXX_HPP_DECODE_RUN(px, run)
-          if(first)[[unlikely]]{
-            QOIXX_HPP_WITH_TABLES(hash = (0*3+0*5+0*7+255*11) % index_size;)
-            if constexpr(std::is_same<rgba_t, qoi::rgba_t>::value)
-              index[QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES((0*3+0*5+0*7+255*11) % index_size)] = px;
-            else
-              efficient_memcpy<Channels>(index + QOIXX_HPP_WITH_TABLES(hash) QOIXX_HPP_WITHOUT_TABLES((0*3+0*5+0*7+255*11) % index_size), &px);
-          }
           return;
         }
         if(b1 == chunk_tag::rgb){
@@ -1244,6 +1239,7 @@ class qoi{
         px.b += vg + drb[1];
         hash = (static_cast<int>(hash)+hash_diff_table[b1]+luma_hash_diff_table[b2]) % index_size;
         ) QOIXX_HPP_WITHOUT_TABLES(
+        static constexpr std::uint32_t mask_tail_4 = 0b0000'1111u;
         px.r += vg + (b2 >> 4);
         px.g += vg + 8;
         px.b += vg + (b2 & mask_tail_4);
@@ -1259,6 +1255,7 @@ class qoi{
         px.b += drgb[2];
         hash = (static_cast<int>(hash)+hash_diff_table[b1]) % index_size;
         ) QOIXX_HPP_WITHOUT_TABLES(
+        static constexpr std::uint32_t mask_tail_2 = 0b0000'0011u;
         px.r += ((b1 >> 4) & mask_tail_2) - 2;
         px.g += ((b1 >> 2) & mask_tail_2) - 2;
         px.b += ( b1       & mask_tail_2) - 2;
@@ -1279,9 +1276,8 @@ class qoi{
       push<Channels>(pixels, &px);
     };
 
-    bool first = true;
     while(px_len--)[[likely]]{
-      f(std::exchange(first, false));
+      f();
       if(size < sizeof(padding))[[unlikely]]{
         throw std::runtime_error("qoixx::qoi::decode: insufficient input data");
       }
