@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(qoixx LANGUAGES CXX)
 
-option(QOIXX_USE_TABLES "If qoixx should store tables." ON)
-option(QOIXX_BUILD_TESTS "Will build qoixx tests." ON)
+option(QOIXX_USE_TABLES "QOIXX will use precomputed tables to increase runtime preformance." ON)
+option(QOIXX_BUILD_TESTS "QOIXX will build samples and tests." ON)
 
 add_library(qoixx INTERFACE)
 add_library(qoixx::qoixx ALIAS qoixx)
