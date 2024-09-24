@@ -29,4 +29,7 @@ if (QOIXX_BUILD_TESTS)
   target_link_libraries(qoitest qoixx::qoixx)
   target_include_directories(qoitest PUBLIC ${DOCTEST})
   set_target_properties(qoitest PROPERTIES CXX_STANDARD 20)
+
+  install(TARGETS qoibench qoiconv
+    RUNTIME DESTINATION "${PROJECT_SOURCE_DIR}/bin")
 endif()
