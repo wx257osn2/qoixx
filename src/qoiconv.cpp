@@ -82,7 +82,7 @@ struct overloaded : Fs...{
 template<typename... Fs> overloaded(Fs...) -> overloaded<Fs...>;
 
 static inline void write_png(const std::filesystem::path& file_path, const image& image){
-  auto [ptr, w, h, c] = std::visit(overloaded(
+  auto [ptr, w, h, c] = std::visit(overloaded{
     [](const stbi_png& image){
       return std::make_tuple(reinterpret_cast<const void*>(image.pixels.get()), image.width, image.height, image.channels);
     },
@@ -94,13 +94,13 @@ static inline void write_png(const std::filesystem::path& file_path, const image
         static_cast<int>(image.second.channels)
       );
     }
-  ), image);
+  }, image);
   if(!::stbi_write_png(file_path.string().c_str(), w, h, c, ptr, 0))
     throw std::runtime_error("write_png: Couldn't write/encode " + file_path.string());
 }
 
 static inline void write_qoi(const std::filesystem::path& file_path, const image& image){
-  auto [ptr, size, desc] = std::visit(overloaded(
+  auto [ptr, size, desc] = std::visit(overloaded{
     [](const stbi_png& image){
       return std::make_tuple(
         reinterpret_cast<const std::byte*>(image.pixels.get()),
@@ -116,7 +116,7 @@ static inline void write_qoi(const std::filesystem::path& file_path, const image
     [](const std::pair<std::vector<std::byte>, qoixx::qoi::desc>& image){
       return std::make_tuple(image.first.data(), image.first.size(), image.second);
     }
-  ), image);
+  }, image);
   const auto encoded = qoixx::qoi::encode<std::vector<std::byte>>(ptr, size, desc);
   save_file(file_path, encoded);
 }
