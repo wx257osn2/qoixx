@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
     steps:
     - uses: msys2/setup-msys2@v2
       with:
@@ -25,15 +25,14 @@ jobs:
       with:
         submodules: recursive
     - uses: actions/cache@v4
+      id: cached
       with:
-        path: images
+        path: |
+          images
+          qoi_test_images
         key: key
-    - id: cached
-      uses: andstor/file-existence-action@v3
-      with:
-        files: "images, qoi_test_images"
     - name: get test/benchmark suite
-      if: steps.cached.outputs.files_exists == 'false'
+      if: steps.cached.outputs.cache-hit != 'true'
       shell: msys2 {0}
       run: |
         curl -O https://qoiformat.org/qoi_test_images.zip
@@ -46,7 +45,7 @@ jobs:
         pushd .dependencies/qoi
         ln -s ../stb/stb_image.h .
         ln -s ../stb/stb_image_write.h .
-        mingw32-make conv
+        CC=clang mingw32-make conv
         popd
         mv .dependencies/qoi/qoiconv.exe bin/qoiconv_orig.exe
     - name: build
