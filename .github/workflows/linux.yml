@@ -10,6 +10,9 @@ jobs:
   ci-ubuntu:
     runs-on: ubuntu-24.04
     steps:
+    - uses: wx257osn2/cxx_environment@v2
+      with:
+        version: v20250216
     - uses: actions/checkout@v4
       with:
         submodules: recursive
@@ -35,12 +38,12 @@ jobs:
         pushd .dependencies/qoi
         ln -s ../stb/stb_image.h .
         ln -s ../stb/stb_image_write.h .
-        CC=clang-17 make conv
+        cxx-env-run make conv CC:=clang
         popd
         mv .dependencies/qoi/qoiconv bin/qoiconv_orig
     - name: build
       shell: bash
-      run: CXX=clang++-17 make -j
+      run: cxx-env-run make -j CXX:=clang++
     - name: test
       shell: bash
       run: |
