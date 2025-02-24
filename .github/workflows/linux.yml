@@ -25,15 +25,14 @@ jobs:
       with:
         submodules: recursive
     - uses: actions/cache@v4
+      id: cached
       with:
-        path: images
+        path: |
+          images
+          qoi_test_images
         key: key
-    - id: cached
-      uses: andstor/file-existence-action@v3
-      with:
-        files: "images, qoi_test_images"
     - name: get test/benchmark suite
-      if: steps.cached.outputs.files_exists == 'false'
+      if: steps.cached.outputs.cache-hit != 'true'
       shell: bash
       run: |
         curl -O https://qoiformat.org/qoi_test_images.zip
