@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
     steps:
     - uses: msys2/setup-msys2@v2
       with:
@@ -46,7 +46,7 @@ jobs:
         pushd .dependencies/qoi
         ln -s ../stb/stb_image.h .
         ln -s ../stb/stb_image_write.h .
-        mingw32-make conv
+        CC=clang mingw32-make conv
         popd
         mv .dependencies/qoi/qoiconv.exe bin/qoiconv_orig.exe
     - name: build
