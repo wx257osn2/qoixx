@@ -24,7 +24,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
       id: cached
       with:
         path: |
@@ -39,6 +39,13 @@ jobs:
         unzip qoi_test_images.zip
         rm qoi_test_images.zip
         curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
+    - uses: actions/cache/save@v4
+      if: steps.cached.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-24.04' && matrix.compiler == 'gcc'
+      with:
+        path: |
+          images
+          qoi_test_images
+        key: ${{ steps.cached.outputs.cache-primary-key }}
     - name: build reference qoiconv
       shell: bash
       run: |
