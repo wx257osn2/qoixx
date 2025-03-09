@@ -20,7 +20,7 @@ jobs:
     steps:
     - uses: wx257osn2/cxx_environment@v2
       with:
-        version: v20250216
+        version: v20250310
     - uses: actions/checkout@v4
       with:
         submodules: recursive
