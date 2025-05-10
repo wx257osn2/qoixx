@@ -24,7 +24,7 @@ jobs:
         sudo dpkg-reconfigure man-db
     - uses: wx257osn2/cxx_environment@v2
       with:
-        version: v20250310
+        version: v20250426
     - uses: actions/checkout@v4
       with:
         submodules: recursive
