@@ -18,6 +18,10 @@ jobs:
             cxx: clang++
     runs-on: ${{ matrix.os }}
     steps:
+    - name: stop update man-page
+      run: |
+        echo "set man-db/auto-update false" | sudo debconf-communicate
+        sudo dpkg-reconfigure man-db
     - uses: wx257osn2/cxx_environment@v2
       with:
         version: v20250310
