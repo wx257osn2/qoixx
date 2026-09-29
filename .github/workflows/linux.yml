@@ -10,7 +10,7 @@ jobs:
   ci-ubuntu:
     strategy:
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        os: [ubuntu-26.04, ubuntu-26.04-arm]
         compiler:
           - cc: gcc
             cxx: g++
@@ -22,13 +22,13 @@ jobs:
       run: |
         echo "set man-db/auto-update false" | sudo debconf-communicate
         sudo dpkg-reconfigure man-db
-    - uses: wx257osn2/cxx_environment@v2
+    - uses: wx257osn2/cxx_environment@v3
       with:
-        version: v20250426
-    - uses: actions/checkout@v4
+        version: v20260911
+    - uses: actions/checkout@v7
       with:
         submodules: recursive
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@v6
       id: cached
       with:
         path: |
@@ -43,8 +43,8 @@ jobs:
         unzip qoi_test_images.zip
         rm qoi_test_images.zip
         curl https://qoiformat.org/benchmark/qoi_benchmark_suite.tar | tar x
-    - uses: actions/cache/save@v4
-      if: steps.cached.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-24.04' && matrix.compiler == 'gcc'
+    - uses: actions/cache/save@v6
+      if: steps.cached.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-26.04' && matrix.compiler == 'gcc'
       with:
         path: |
           images
