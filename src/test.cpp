@@ -85,6 +85,16 @@ TEST_CASE("3-channel image"){
     const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::byte>>(expected.data(), expected.size());
     CHECK(equals(actual, image));
   }
+  SUBCASE("decode truncated input"){
+    for(std::size_t size = 0; size < expected.size(); ++size){
+      CAPTURE(size);
+      const std::vector truncated(expected.cbegin(), std::next(expected.cbegin(), size));
+      if(size < qoixx::qoi::header_size + sizeof(qoixx::qoi::padding))
+        CHECK_THROWS_AS(qoixx::qoi::decode<std::vector<std::uint8_t>>(truncated), std::invalid_argument);
+      else
+        CHECK_THROWS_AS(qoixx::qoi::decode<std::vector<std::uint8_t>>(truncated), std::runtime_error);
+    }
+  }
 }
 
 TEST_CASE("4-channel image"){
@@ -157,5 +167,15 @@ TEST_CASE("4-channel image"){
   SUBCASE("decode std::uint8_t*, output as std::vector<std::byte>"){
     const auto [actual, desc] = qoixx::qoi::decode<std::vector<std::byte>>(expected.data(), expected.size());
     CHECK(equals(actual, image));
+  }
+  SUBCASE("decode truncated input"){
+    for(std::size_t size = 0; size < expected.size(); ++size){
+      CAPTURE(size);
+      const std::vector truncated(expected.cbegin(), std::next(expected.cbegin(), size));
+      if(size < qoixx::qoi::header_size + sizeof(qoixx::qoi::padding))
+        CHECK_THROWS_AS(qoixx::qoi::decode<std::vector<std::uint8_t>>(truncated), std::invalid_argument);
+      else
+        CHECK_THROWS_AS(qoixx::qoi::decode<std::vector<std::uint8_t>>(truncated), std::runtime_error);
+    }
   }
 }
