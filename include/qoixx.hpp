@@ -1382,9 +1382,9 @@ class qoi{
     auto p = coT::create_pusher(data);
 
     if(channels == 4)
-      decode_impl<4>(p, puller, px_len, size);
+      decode_impl<4>(p, puller, px_len, size-header_size);
     else
-      decode_impl<3>(p, puller, px_len, size);
+      decode_impl<3>(p, puller, px_len, size-header_size);
 
     return std::make_pair(std::move(p.finalize()), d);
   }
